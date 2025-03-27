@@ -65,26 +65,26 @@ async function configureAdvancedSettings(page)
     }
 }
 
-async function setUsageTimeOption(page, hours_per_day=10) {
-    console.log(`⏲️ Setting Usage Time Option based on hours per day: ${hours_per_day}`);
+    async function setUsageTimeOption(page, hours_per_day=10) {
+        console.log(`⏲️ Setting Usage Time Option based on hours per day: ${hours_per_day}`);
 
-    if (hours_per_day > 0 && hours_per_day < 5) {
-        const toggleSelector = 'button[role="switch"][aria-labelledby="ucc-4"]';
+        if (hours_per_day > 0 && hours_per_day < 5) {
+            const toggleSelector = 'button[role="switch"][aria-labelledby="ucc-4"]';
 
-        await page.waitForSelector(toggleSelector, { visible: true });
+            await page.waitForSelector(toggleSelector, { visible: true });
 
-        const isChecked = await page.$eval(toggleSelector, btn => btn.getAttribute('aria-checked') === 'true');
+            const isChecked = await page.$eval(toggleSelector, btn => btn.getAttribute('aria-checked') === 'true');
 
-        if (!isChecked) {
-            await page.click(toggleSelector);
-            console.log('✅ Usage Time Option toggled ON.');
+            if (!isChecked) {
+                await page.click(toggleSelector);
+                console.log('✅ Usage Time Option toggled ON.');
+            } else {
+                console.log('ℹ️ Usage Time Option already ON.');
+            }
         } else {
-            console.log('ℹ️ Usage Time Option already ON.');
+            console.log('ℹ️ Skipping toggle — hours not in range.');
         }
-    } else {
-        console.log('ℹ️ Skipping toggle — hours not in range.');
     }
-}
 
 
 
@@ -173,7 +173,7 @@ async function selectProvisioningModel(page, model = 'Preemptible') {
     console.log('✅ Provisioning Model set to Preemptible (Spot)');
 }
 
-async function selectMachineFamily(pageOrFrame, value = 'Compute-optimized') {
+async function selectMachineFamily(pageOrFrame, value = 'General Purpose') {
     console.log(`🏗 Selecting Machine Family: "${value}"`);
   
     const dropdownOpener = await pageOrFrame.$('div.S8daBe-aPP78e');
@@ -199,91 +199,225 @@ async function selectMachineFamily(pageOrFrame, value = 'Compute-optimized') {
   }
   
   
+  async function selectSeries(pageOrFrame, value = 'N1') {
+    console.log(`📘 Selecting Series: "${value}"`);
   
+    const dropdownOpener = await pageOrFrame.$('div.S8daBe-aPP78e');
+    if (!dropdownOpener) throw new Error('❌ Series dropdown trigger not found');
+    await dropdownOpener.click();
+    console.log('📂 Dropdown clicked, waiting for options...');
   
-  async function selectSeries(frame, seriesText="C2D") {
-    console.log(`📘 Selecting Series: "${seriesText}"`);
+    // Wait for any option to appear first
+    await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"]', { visible: true, timeout: 10000 });
   
-    if (!seriesText) throw new Error("❌ Series text is undefined");
+    // Then wait specifically for the option you want to appear in DOM
+    await pageOrFrame.waitForFunction(
+      (value) => {
+        const items = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"] span[jsname="K4r5Ff"]'));
+        return items.some((el) => el.textContent.trim().toLowerCase() === value.toLowerCase());
+      },
+      { timeout: 10000 },
+      value
+    );
   
-    const dropdowns = await frame.$$('[jsname="xl07Ob"]');
-    const dropdown = dropdowns[2];
-  
-    if (!dropdown) throw new Error("❌ Series dropdown not found");
-  
-    try {
-      await dropdown.scrollIntoViewIfNeeded();
-  
-      const box = await dropdown.boundingBox();
-      if (!box) throw new Error("❌ Dropdown not visible for Series");
-  
-      await frame.waitForTimeout(300); // allow animations/rendering
-  
-      try {
-        await dropdown.hover();
-        await dropdown.click({ delay: 100 });
-      } catch {
-        // fallback to forcing click via JS
-        const button = await dropdown.evaluateHandle(el => el);
-        await frame.evaluate(el => el.click(), button);
-      }
-  
-      console.log("📂 Series dropdown clicked, waiting for menu...");
-    } catch (err) {
-      throw new Error("❌ Failed to click on Series dropdown");
-    }
-  
-    const listboxSelector = 'ul[role="listbox"][aria-label="Series"]';
-    try {
-      await frame.waitForSelector(listboxSelector, { timeout: 8000 });
-    } catch {
-      throw new Error("❌ Series options did not appear");
-    }
-  
-    await frame.waitForTimeout(500);
-  
-    const options = await frame.$$(listboxSelector + ' li[role="option"]');
-  
-    let found = false;
-    for (const option of options) {
-      const text = await option.evaluate(el =>
-        el.querySelector('[jsname="K4r5Ff"]')?.innerText.trim()
-      );
-  
-      if (text?.toLowerCase().includes(seriesText.toLowerCase())) {
-        try {
-          await option.scrollIntoViewIfNeeded();
-          await option.hover();
-          await option.click({ delay: 80 });
-          console.log(`✅ Series selected: ${text}`);
-          found = true;
-          break;
-        } catch (err) {
-          throw new Error(`❌ Failed to click Series option: ${text}`);
+    // Finally evaluate and click it
+    const clicked = await pageOrFrame.evaluate((value) => {
+      const items = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'));
+      for (const item of items) {
+        const label = item.querySelector('span[jsname="K4r5Ff"]');
+        if (label && label.textContent.trim().toLowerCase() === value.toLowerCase()) {
+          label.scrollIntoView({ block: 'center' });
+          label.click();
+          return true;
         }
       }
-    }
+      return false;
+    }, value);
   
-    if (!found) throw new Error(`❌ Could not find Series: "${seriesText}"`);
+    if (!clicked) throw new Error(`❌ Series "${value}" not found in dropdown`);
+    console.log(`✅ Series selected: ${value}`);
   }
   
   
   
   
   
-async function selectMachineType(page) {}
+  async function selectMachineType(pageOrFrame, value = 'f1-micro') {
+    console.log(`📘 Selecting Machine Type: "${value}"`);
+  
+    const dropdownOpener = await pageOrFrame.$('div.S8daBe-aPP78e');
+    if (!dropdownOpener) throw new Error('❌ Machine Type dropdown trigger not found');
+    await dropdownOpener.click();
+    console.log('📂 Dropdown clicked, waiting for options...');
+  
+    await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"]', { visible: true, timeout: 10000 });
+  
+    await pageOrFrame.waitForFunction(
+      (value) => {
+        const options = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"] span[jsname="K4r5Ff"]'));
+        return options.some(el => el.textContent.trim().toLowerCase() === value.toLowerCase());
+      },
+      { timeout: 10000 },
+      value
+    );
+  
+    const clicked = await pageOrFrame.evaluate((value) => {
+      const options = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'));
+      for (const option of options) {
+        const label = option.querySelector('span[jsname="K4r5Ff"]');
+        if (label && label.textContent.trim().toLowerCase() === value.toLowerCase()) {
+          label.scrollIntoView({ block: 'center' });
+          label.click();
+          return true;
+        }
+      }
+      return false;
+    }, value);
+  
+    if (!clicked) throw new Error(`❌ Machine Type "${value}" not found in dropdown`);
+    console.log(`✅ Machine Type selected: ${value}`);
+  }
+  
 async function setNumberOfvCPUs(page) {}
 async function setAmountOfMemory(page) {}
-async function setBootDiskSize(page) {}
-async function toggleSustainedUseDiscount(page) {}
-async function selectRegion(page) {}
+
+
+async function setBootDiskSize(pageOrFrame, sizeInGB = 100) {
+    console.log(`💾 Setting Boot Disk Size to ${sizeInGB} GB`);
+  
+    const inputSelector = 'input[type="number"][id="c31"]';
+  
+    // Wait until the input field is visible and enabled
+    await pageOrFrame.waitForSelector(inputSelector, { visible: true, timeout: 10000 });
+  
+    const input = await pageOrFrame.$(inputSelector);
+    if (!input) throw new Error('❌ Boot disk size input field not found');
+  
+    // Click + focus + clear + type new value
+    await input.click({ clickCount: 3 }); // Triple click selects all text
+    await pageOrFrame.keyboard.press('Backspace'); // Ensure it's empty
+    await input.type(sizeInGB.toString());
+  
+    console.log(`✅ Boot Disk Size set to ${sizeInGB} GB`);
+  }
+  
+
+  async function toggleSustainedUseDiscount(pageOrFrame, enable = true) {
+    const toggleSelector = 'button[role="switch"][aria-label="Add sustained use discounts"]';
+    const checkMarkPath = 'M9.55 18.2'; // enabled
+    const crossMarkPath = 'M6.4 19.2';  // disabled
+  
+    console.log(`🎯 Ensuring Sustained Use Discount is ${enable ? 'ENABLED' : 'DISABLED'}`);
+  
+    try {
+      await pageOrFrame.waitForSelector(toggleSelector, { visible: true, timeout: 10000 });
+  
+      const toggle = await pageOrFrame.$(toggleSelector);
+      if (!toggle) throw new Error('❌ Toggle button not found');
+  
+      const currentState = await pageOrFrame.evaluate(el => el.getAttribute('aria-checked') === 'true', toggle);
+  
+      if (currentState === enable) {
+        console.log(`✅ Sustained Use Discount is already ${enable ? 'enabled' : 'disabled'}`);
+        return;
+      }
+  
+      // Simulate actual DOM click
+      await pageOrFrame.evaluate(el => {
+        const event = new MouseEvent('click', {
+          view: window,
+          bubbles: true,
+          cancelable: true
+        });
+        el.dispatchEvent(event);
+      }, toggle);
+  
+      await pageOrFrame.waitForTimeout?.(1000) || await new Promise(r => setTimeout(r, 1000));
+  
+      const verified = await pageOrFrame.evaluate(({ selector, enable, checkMarkPath, crossMarkPath }) => {
+        const btn = document.querySelector(selector);
+        if (!btn) return false;
+  
+        const path = btn.querySelector('svg path')?.getAttribute('d') || '';
+        return enable ? path.includes(checkMarkPath) : path.includes(crossMarkPath);
+      }, { selector: toggleSelector, enable, checkMarkPath, crossMarkPath });
+  
+      if (verified) {
+        console.log(`✅ Sustained Use Discount successfully toggled to ${enable ? 'enabled' : 'disabled'}`);
+      } else {
+        throw new Error('❌ Toggle verification failed: SVG path did not update');
+      }
+  
+    } catch (err) {
+      console.error(`❌ Failed to toggle Sustained Use Discount: ${err.message}`);
+      throw err;
+    }
+  }
+  
+  
+  
+  
+
+  async function selectRegion(pageOrFrame, value = 'us-west1') {
+    console.log(`🌎 Selecting Region: "${value}"`);
+  
+    const dropdownTrigger = await pageOrFrame.$('div[role="combobox"] span[jsname="Fb0Bif"]');
+    if (!dropdownTrigger) throw new Error('❌ Region dropdown trigger not found');
+  
+    await dropdownTrigger.click();
+    console.log('📂 Region dropdown clicked, waiting for options...');
+  
+    await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"]', {
+      visible: true,
+      timeout: 10000,
+    });
+  
+    await pageOrFrame.waitForFunction(
+      (val) => {
+        return Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'))
+          .some(option => option.getAttribute('data-value') === val);
+      },
+      { timeout: 10000 },
+      value
+    );
+  
+    const success = await pageOrFrame.evaluate((val) => {
+      const options = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'));
+      for (const option of options) {
+        if (option.getAttribute('data-value') === val) {
+          option.scrollIntoView({ block: 'center' });
+          option.click();
+          return true;
+        }
+      }
+      return false;
+    }, value);
+  
+    if (!success) throw new Error(`❌ Region "${value}" not found in dropdown`);
+  
+    console.log(`✅ Region selected: ${value}`);
+  }
+  
+  
+  
+  
+  
+  
+  
 async function selectOnDemandOption(page) {}
 async function selectCUD1YearOption(page) {}
 async function selectCUD3YearOption(page) {}
 async function scrapeMachineTypeData(page) {}
 async function scrapeEstimatedPrice(page) {}
 async function scrapePrice(page) {}
-async function scrapeUrl(page) {}
+
+async function scrapeUrl(page) {
+    const currentUrl = page.url();
+    console.log(`🔗 Current page URL: ${currentUrl}`);
+    return currentUrl;
+  }
+  
+
 
 async function calculateGCPCosts() {
     let browser, page;

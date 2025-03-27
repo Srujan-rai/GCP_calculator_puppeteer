@@ -1,0 +1,12 @@
+{
+  "name": "gcp-calculator-puppeteer",
+  "version": "1.0.0",
+  "description": "Automated GCP pricing calculator using Puppeteer",
+  "main": "compute.js",
+  "scripts": {
+    "start": "node compute.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.4.0"
+  }
+}

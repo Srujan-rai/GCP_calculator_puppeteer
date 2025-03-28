@@ -356,71 +356,52 @@ async function setBootDiskSize(pageOrFrame, sizeInGB = 100) {
   
   
   
-  async function selectRegion(pageOrFrame, value = 'us-east1') {
+  async function selectRegion(pageOrFrame, value = 'asia-south1') {
     console.log(`🌎 Selecting Region: "${value}"`);
   
-    const dropdowns = await pageOrFrame.$$('div.S8daBe-aPP78e');
-    console.log(`🔍 Found ${dropdowns.length} dropdowns.`);
+    const regionDisplayHandle = await pageOrFrame.$('span.S8daBe-uusGie-fmcmS');
   
-    let regionDropdown = null;
-  
-    for (const dropdown of dropdowns) {
-      const labelText = await pageOrFrame.evaluate(el => {
-        const parent = el.closest('div[jscontroller]');
-        if (!parent) return null;
-        const label = parent.querySelector('span[jsname="YRMmle"]');
-        return label ? label.textContent.trim().toLowerCase() : null;
-      }, dropdown);
-  
-      if (labelText === 'region') {
-        regionDropdown = dropdown;
-        break;
-      }
+    if (!regionDisplayHandle) {
+      throw new Error('❌ Region display element not found');
     }
   
-    if (!regionDropdown) throw new Error('❌ Region dropdown trigger not found');
+    const regionDropdownHandle = await regionDisplayHandle.evaluateHandle((el) => {
+      while (el && !el.getAttribute('role')?.includes('combobox')) {
+        el = el.parentElement;
+      }
+      return el;
+    });
   
-    await regionDropdown.click();
+    if (!regionDropdownHandle) {
+      throw new Error('❌ Region dropdown trigger not found');
+    }
+  
+    await regionDropdownHandle.click();
     console.log('📂 Region dropdown clicked. Waiting for options...');
   
-    // Try multiple possible selectors
-    const selectorsToTry = [
-      'ul[role="listbox"] li[role="option"][data-value]',
-      'div[jsname="SDSjce"] ul[role="listbox"] li[role="option"][data-value]',
-      'li[role="option"][data-value]'
-    ];
+    await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"][data-value]', {
+      visible: true,
+      timeout: 10000,
+    });
   
-    let optionsSelector = null;
-  
-    for (const selector of selectorsToTry) {
-      try {
-        await pageOrFrame.waitForSelector(selector, { timeout: 5000 });
-        optionsSelector = selector;
-        break;
-      } catch {
-        continue;
-      }
-    }
-  
-    if (!optionsSelector) throw new Error('❌ Region options did not appear in any known selectors');
-  
-    const clicked = await pageOrFrame.evaluate((val) => {
-      const items = Array.from(document.querySelectorAll('li[role="option"][data-value]'));
-      for (const item of items) {
-        if (item.getAttribute('data-value') === val) {
-          item.scrollIntoView({ block: 'center' });
-          item.click();
-          return true;
-        }
+    // Select the desired region
+    const success = await pageOrFrame.evaluate((targetValue) => {
+      const options = [...document.querySelectorAll('ul[role="listbox"] li[role="option"]')];
+      const option = options.find((el) => el.dataset.value === targetValue);
+      if (option) {
+        option.scrollIntoView({ block: 'center' });
+        option.click();
+        return true;
       }
       return false;
     }, value);
   
-    if (!clicked) throw new Error(`❌ Region "${value}" not found in dropdown`);
+    if (!success) {
+      throw new Error(`❌ Region "${value}" not found in dropdown`);
+    }
+  
     console.log(`✅ Region selected: ${value}`);
   }
-  
-  
   
   
   
@@ -430,13 +411,17 @@ async function selectCUD1YearOption(page) {}
 async function selectCUD3YearOption(page) {}
 async function scrapeMachineTypeData(page) {}
 async function scrapeEstimatedPrice(page) {}
-async function scrapePrice(page) {}
 
-async function scrapeUrl(page) {
-    const currentUrl = page.url();
-    console.log(`🔗 Current page URL: ${currentUrl}`);
-    return currentUrl;
-  }
+
+async function scrapeUrl(page, waitMs = 3000) {
+  console.log(`⏳ Waiting ${waitMs}ms to ensure all inputs reflect in URL...`);
+  await wait(waitMs); 
+
+  const url = page.url();
+  console.log(`🔗 Final page URL: ${url}`);
+  return url;
+}
+
   
 
 
@@ -478,7 +463,7 @@ async function calculateGCPCosts() {
         // 🔍 Scraping
         await scrapeMachineTypeData(page);
         await scrapeEstimatedPrice(page);
-        await scrapePrice(page);
+        
         await scrapeUrl(page);
 
         // 📸 Screenshot after all steps

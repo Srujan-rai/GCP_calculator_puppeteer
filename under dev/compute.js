@@ -356,48 +356,69 @@ async function setBootDiskSize(pageOrFrame, sizeInGB = 100) {
   
   
   
-  
-
-  async function selectRegion(pageOrFrame, value = 'us-west1') {
+  async function selectRegion(pageOrFrame, value = 'us-east1') {
     console.log(`🌎 Selecting Region: "${value}"`);
   
-    const dropdownTrigger = await pageOrFrame.$('div[role="combobox"] span[jsname="Fb0Bif"]');
-    if (!dropdownTrigger) throw new Error('❌ Region dropdown trigger not found');
+    const dropdowns = await pageOrFrame.$$('div.S8daBe-aPP78e');
+    console.log(`🔍 Found ${dropdowns.length} dropdowns.`);
   
-    await dropdownTrigger.click();
-    console.log('📂 Region dropdown clicked, waiting for options...');
+    let regionDropdown = null;
   
-    await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"]', {
-      visible: true,
-      timeout: 10000,
-    });
+    for (const dropdown of dropdowns) {
+      const labelText = await pageOrFrame.evaluate(el => {
+        const parent = el.closest('div[jscontroller]');
+        if (!parent) return null;
+        const label = parent.querySelector('span[jsname="YRMmle"]');
+        return label ? label.textContent.trim().toLowerCase() : null;
+      }, dropdown);
   
-    await pageOrFrame.waitForFunction(
-      (val) => {
-        return Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'))
-          .some(option => option.getAttribute('data-value') === val);
-      },
-      { timeout: 10000 },
-      value
-    );
+      if (labelText === 'region') {
+        regionDropdown = dropdown;
+        break;
+      }
+    }
   
-    const success = await pageOrFrame.evaluate((val) => {
-      const options = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'));
-      for (const option of options) {
-        if (option.getAttribute('data-value') === val) {
-          option.scrollIntoView({ block: 'center' });
-          option.click();
+    if (!regionDropdown) throw new Error('❌ Region dropdown trigger not found');
+  
+    await regionDropdown.click();
+    console.log('📂 Region dropdown clicked. Waiting for options...');
+  
+    // Try multiple possible selectors
+    const selectorsToTry = [
+      'ul[role="listbox"] li[role="option"][data-value]',
+      'div[jsname="SDSjce"] ul[role="listbox"] li[role="option"][data-value]',
+      'li[role="option"][data-value]'
+    ];
+  
+    let optionsSelector = null;
+  
+    for (const selector of selectorsToTry) {
+      try {
+        await pageOrFrame.waitForSelector(selector, { timeout: 5000 });
+        optionsSelector = selector;
+        break;
+      } catch {
+        continue;
+      }
+    }
+  
+    if (!optionsSelector) throw new Error('❌ Region options did not appear in any known selectors');
+  
+    const clicked = await pageOrFrame.evaluate((val) => {
+      const items = Array.from(document.querySelectorAll('li[role="option"][data-value]'));
+      for (const item of items) {
+        if (item.getAttribute('data-value') === val) {
+          item.scrollIntoView({ block: 'center' });
+          item.click();
           return true;
         }
       }
       return false;
     }, value);
   
-    if (!success) throw new Error(`❌ Region "${value}" not found in dropdown`);
-  
+    if (!clicked) throw new Error(`❌ Region "${value}" not found in dropdown`);
     console.log(`✅ Region selected: ${value}`);
   }
-  
   
   
   

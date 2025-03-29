@@ -36,13 +36,25 @@ async function computeEngineModal(page) {
 }
 
 async function waitForNextSection(page) {
-    console.log('Waiting for Compute Engine config page...');
-    try {
-        await page.waitForSelector('input[aria-label="Name"]', { timeout: 3000 });
-    } catch {
-        console.warn('⚠️ Config page did not show expected input, proceeding anyway...');
-    }
+  console.log('⏳ Waiting for Compute Engine configuration page to load...');
+  try {
+      await page.waitForSelector('input[aria-label="Name"]', { timeout: 5000, visible: true });
+      console.log('✅ Compute Engine config page is ready.');
+  } catch (error) {
+      console.warn('⚠️ Expected Compute Engine input not found. Checking for fallback indicators...');
+
+      // Optional: wait for a known container or other unique section header
+      const fallbackSelector = 'div[aria-label="VM instance"]';
+      const fallbackVisible = await page.$(fallbackSelector);
+
+      if (fallbackVisible) {
+          console.log('✅ Fallback container found. Proceeding with configuration.');
+      } else {
+          console.warn('❌ Neither primary nor fallback selectors were found. Proceeding anyway...');
+      }
+  }
 }
+
 
 // 🧩 Modular Config Functions (currently empty)
 
@@ -403,24 +415,115 @@ async function setBootDiskSize(pageOrFrame, sizeInGB = 100) {
     console.log(`✅ Region selected: ${value}`);
   }
   
+//33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333//
+
+  
+async function selectCommittedUseDiscountOption(page, option= 'none' ) {
+  const labelMap = {
+    none: { id: "116none", text: "None" },
+    "1year": { id: "1161-year", text: "1 year" },
+    "3years": { id: "1163-years", text: "3 years" },
+  };
+
+  const selected = labelMap[option.toLowerCase()];
+  if (!selected) throw new Error("❌ Invalid CUD option passed");
+
+  try {
+    console.log(`🎯 Attempting to select CUD option: ${selected.text}`);
+
+    // Scroll down slowly until CUD section appears
+    const found = await page.evaluate(async () => {
+      const scrollStep = 300;
+      const delay = (ms) => new Promise(res => setTimeout(res, ms));
+      for (let i = 0; i < 30; i++) {
+        window.scrollBy(0, scrollStep);
+        await delay(300);
+        if (document.body.innerText.includes("Committed use discount options")) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (!found) throw new Error("❌ Could not find CUD section after scrolling.");
+
+    // Click the label matching the correct option
+    await page.waitForSelector(`label[for="${selected.id}"]`, { timeout: 8000 });
+    await page.click(`label[for="${selected.id}"]`);
+    console.log(`✅ '${selected.text}' CUD option selected successfully`);
+  } catch (err) {
+    console.error(`❌ Failed to select '${option}' CUD option: ${err.message}`);
+    throw err;
+  }
+}
+
   
   
-  
-async function selectOnDemandOption(page) {}
-async function selectCUD1YearOption(page) {}
-async function selectCUD3YearOption(page) {}
-async function scrapeMachineTypeData(page) {}
-async function scrapeEstimatedPrice(page) {}
+
+
+
+
+
+//333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333//
+async function scrapeMachineTypeData(page) {
+  console.log('🔍 Scraping machine type data...');
+
+  try {
+    await page.waitForSelector('div.VVW32d', { timeout: 5000 });
+
+    const result = await page.evaluate(() => {
+      const container = document.querySelector('div.VVW32d');
+      if (!container) return null;
+
+      const machineType = container.querySelector('div.D3Zlgc.MyvX5d.D0aEmf')?.textContent.trim();
+      const specs = Array.from(container.querySelectorAll('div.HY0Uh'))
+        .map(el => el.textContent.trim())
+        .find(text => text.includes('vCPUs'));
+
+      return { machineType, specs };
+    });
+
+    if (!result) {
+      throw new Error('Machine type container not found or malformed.');
+    }
+
+    console.log(`⚙️ Machine Type: ${result.machineType}`);
+    console.log(`🧠 Specs: ${result.specs}`);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Failed to scrape machine type data:', error);
+    await page.screenshot({ path: 'machine-type-error.png' });
+    return { machineType: null, specs: null };
+  }
+}
 
 
 async function scrapeUrl(page, waitMs = 3000) {
   console.log(`⏳ Waiting ${waitMs}ms to ensure all inputs reflect in URL...`);
-  await wait(waitMs); 
+  await new Promise(resolve => setTimeout(resolve, waitMs)); // ✅ Replace 'wait' with this
 
   const url = page.url();
   console.log(`🔗 Final page URL: ${url}`);
   return url;
 }
+
+async function scrapeEstimatedPrice(page) {
+  console.log('🔍 Scraping estimated price...');
+
+  try {
+    await page.waitForSelector('div.egBpsb span.MyvX5d.D0aEmf', { timeout: 5000 });
+    const price = await page.$eval('div.egBpsb span.MyvX5d.D0aEmf', el => el.textContent.trim());
+
+    console.log(`💰 Estimated Price: ${price}`);
+    return price;
+  } catch (error) {
+    console.error('❌ Failed to scrape estimated price:', error);
+    await page.screenshot({ path: 'price-error-screenshot.png' });
+    return null;
+  }
+}
+
 
   
 
@@ -441,7 +544,6 @@ async function calculateGCPCosts() {
         await computeEngineModal(page);
         await waitForNextSection(page);
 
-        // 📦 Call configuration functions here
         await configureAdvancedSettings(page);
         await setUsageTimeOption(page);
         await setNumberOfInstances(page);
@@ -456,17 +558,12 @@ async function calculateGCPCosts() {
         await setBootDiskSize(page);
         await toggleSustainedUseDiscount(page);
         await selectRegion(page);
-        await selectOnDemandOption(page);
-        await selectCUD1YearOption(page);
-        await selectCUD3YearOption(page);
+        await selectCommittedUseDiscountOption(page);
 
-        // 🔍 Scraping
         await scrapeMachineTypeData(page);
-        await scrapeEstimatedPrice(page);
-        
         await scrapeUrl(page);
+        await scrapeEstimatedPrice(page);
 
-        // 📸 Screenshot after all steps
         await page.screenshot({ path: 'final-output.png', fullPage: true });
         console.log('📸 Screenshot saved as final-output.png');
 

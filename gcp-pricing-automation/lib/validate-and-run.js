@@ -23,6 +23,90 @@ if (!SHEET_URL) {
   process.exit(1);
 }
 
+const { google } = require('googleapis');
+
+async function makeSheetPublic(spreadsheetId) {
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: SERVICE_ACCOUNT.client_email,
+      private_key: SERVICE_ACCOUNT.private_key,
+    },
+    scopes: ['https://www.googleapis.com/auth/drive'],
+  });
+
+  const drive = google.drive({ version: 'v3', auth });
+
+  await drive.permissions.create({
+    fileId: spreadsheetId,
+    requestBody: {
+      role: 'writer',        
+      type: 'anyone',
+      
+    },
+  });
+
+
+  console.log(`[validate-and-run.js] 🌐 Sheet made public: anyone with the link can access it.📎 Sheet URL: https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
+  console.log(`[validate-and-run.js] 📎 Sheet URL: https://docs.google.com/spreadsheets/d/${spreadsheetId}`);
+}
+
+
+/**
+ * @param {string} spreadsheetId - The ID of the spreadsheet to share.
+ * @param {string[]} emails - Array of email addresses.
+ */
+async function shareSheetWithEmails(spreadsheetId, emails = []) {
+    // Create a JWT client with proper Drive scopes
+    const auth = new google.auth.JWT({
+      email: SERVICE_ACCOUNT.client_email,
+      key: SERVICE_ACCOUNT.private_key,
+      scopes: [
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/spreadsheets'
+      ],
+    });
+  
+    // Initialize Drive API
+    const drive = google.drive({ version: 'v3', auth });
+  
+    try {
+      // First ensure service account has access
+      await drive.permissions.create({
+        fileId: spreadsheetId,
+        requestBody: {
+          role: 'writer',
+          type: 'user',
+          emailAddress: SERVICE_ACCOUNT.client_email,
+        },
+        sendNotificationEmail: false,
+      });
+  
+      // Now share with target emails
+      for (const email of emails) {
+        if (!email.includes('@')) {
+          console.warn(`Skipping invalid email: ${email}`);
+          continue;
+        }
+  
+        await drive.permissions.create({
+          fileId: spreadsheetId,
+          requestBody: {
+            role: 'writer',
+            type: 'user',
+            emailAddress: email,
+          },
+          sendNotificationEmail: true,
+        });
+  
+        console.log(`✅ Successfully shared with ${email}`);
+      }
+    } catch (err) {
+      console.error(`❌ Critical error: ${err.message}`);
+    }
+  }
+  
+
+
 function extractSheetId(url) {
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   return match?.[1] || null;
@@ -159,18 +243,17 @@ async function sendToComputeContainer(mode, payload) {
     const resultArray = Object.values(computeResults);
     await sheet.addRows(resultArray);
 
-    for (const email of emailList) {
-      await doc.share({
-        emailAddress: email,
-        role: 'writer',
-        type: 'user'
-      });
-    }
+    await makeSheetPublic(doc.spreadsheetId);
+    await shareSheetWithEmails(doc.spreadsheetId, emailList);
 
-    console.log(`[validate-and-run.js] ✅ New sheet created and shared with: ${emailList.join(', ')}`);
+
+    
+
+    
     console.log(`[validate-and-run.js] 📎 Sheet URL: https://docs.google.com/spreadsheets/d/${doc.spreadsheetId}`);
 
 
+    
   } catch (err) {
     console.error('[validate-and-run.js] ❌ Failed:', err.message);
   }

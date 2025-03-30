@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  compute-sud:
+    build:
+      context: .
+    container_name: compute-sud
+    ports:
+      - "4001:3000"
+    environment:
+      - MODE=sud
+
+  compute-ondemand:
+    build:
+      context: .
+    container_name: compute-ondemand
+    ports:
+      - "4002:3000"
+    environment:
+      - MODE=ondemand
+
+  compute-1year:
+    build:
+      context: .
+    container_name: compute-1year
+    ports:
+      - "4003:3000"
+    environment:
+      - MODE=1year
+
+  compute-3year:
+    build:
+      context: .
+    container_name: compute-3year
+    ports:
+      - "4004:3000"
+    environment:
+      - MODE=3year

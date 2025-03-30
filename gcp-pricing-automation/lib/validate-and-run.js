@@ -81,7 +81,6 @@ async function shareSheetWithEmails(spreadsheetId, emails = []) {
         sendNotificationEmail: false,
       });
   
-      // Now share with target emails
       for (const email of emails) {
         if (!email.includes('@')) {
           console.warn(`Skipping invalid email: ${email}`);
@@ -231,7 +230,12 @@ async function sendToComputeContainer(mode, payload) {
       title: `GCP Compute Pricing Results - ${new Date().toLocaleString()}`
     });
 
-    const sheet = await doc.addSheet({ headerValues: [
+
+
+
+    const sheet = await doc.addSheet({
+        title: "ComputeEngine",
+        headerValues: [
       'Sl',
       'sud_price', 'sud_url', 'sud_machineType', 'sud_specs',
       'ondemand_price', 'ondemand_url', 'ondemand_machineType', 'ondemand_specs',
@@ -240,6 +244,10 @@ async function sendToComputeContainer(mode, payload) {
       'timestamp'
     ] });
 
+    const defaultSheet = doc.sheetsByTitle['Sheet1'];
+    if (defaultSheet) {
+    await defaultSheet.delete();
+    }
     const resultArray = Object.values(computeResults);
     await sheet.addRows(resultArray);
 

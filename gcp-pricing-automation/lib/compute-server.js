@@ -10,8 +10,11 @@ app.post('/compute', async (req, res) => {
   const sl = row.Sl;
 
   console.log(`🚀 [${mode.toUpperCase()}] Computing for Sl ${sl}`);
+  console.log(`🚀 Row: ${JSON.stringify(row)}`);
+  console.log(`🚀 Mode: ${row["No. of Instances"]}`);
 
-  // Launch browser instance
+
+
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']

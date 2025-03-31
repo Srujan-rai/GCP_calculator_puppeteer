@@ -33,3 +33,4 @@ RUN apt-get update && apt-get install -y \
 EXPOSE 3000
 
 CMD ["node", "lib/compute-server.js"]
+

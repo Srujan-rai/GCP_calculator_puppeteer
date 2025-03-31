@@ -186,32 +186,121 @@ async function sendToComputeContainer(mode, payload) {
         computeResults[row.Sl] = { Sl: row.Sl, Error: row.Error };
         continue;
       }
-
+    
       const isFirst = i === 0;
       const isLast = i === finalRows.length - 1;
       const rowWithMeta = { ...row, first: isFirst, last: isLast };
-
-      console.log(`[validate-and-run.js] 🚀 Sending Sl ${row.Sl} to all compute containers...`);
-
-      const modes = ['sud', 'ondemand', '1year', '3year'];
-      const resultsByMode = await Promise.all(
-        modes.map(mode => sendToComputeContainer(mode, { ...rowWithMeta, mode }))
-      );
-
+      console.log(rowWithMeta);
+    
+      console.log(`[validate-and-run.js] 🚀 Sending Sl ${row.Sl} to compute containers...`);
+    
       const resultObj = { Sl: row.Sl, timestamp: new Date().toISOString() };
-
-      for (let j = 0; j < modes.length; j++) {
-        const mode = modes[j];
-        const result = resultsByMode[j];
-        resultObj[`${mode}_price`] = result?.price || null;
-        resultObj[`${mode}_url`] = result?.url || null;
-        resultObj[`${mode}_machineType`] = result?.machineType || null;
-        resultObj[`${mode}_specs`] = result?.specs || null;
+    
+      const machineClass = row.machine_class?.toLowerCase();
+      const series = row.series?.toUpperCase();
+      const hours = parseFloat(row.hours_per_Day || 0);
+    
+      if (machineClass === 'preemptible') {
+        // PREEMPTIBLE
+        const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });
+        ['sud', '1year', '3year'].forEach(mode => {
+          resultObj[`${mode}_price`] = ondemand?.price || null;
+          resultObj[`${mode}_url`] = ondemand?.url || null;
+          resultObj[`${mode}_machineType`] = ondemand?.machineType || null;
+          resultObj[`${mode}_specs`] = ondemand?.specs || null;
+        });
+        resultObj['ondemand_price'] = ondemand?.price || null;
+        resultObj['ondemand_url'] = ondemand?.url || null;
+        resultObj['ondemand_machineType'] = ondemand?.machineType || null;
+        resultObj['ondemand_specs'] = ondemand?.specs || null;
+    
+      } else if (machineClass === 'regular' && hours < 730) {
+        // REGULAR underutilized
+        const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });
+        resultObj['ondemand_price'] = ondemand?.price || null;
+        resultObj['ondemand_url'] = ondemand?.url || null;
+        resultObj['ondemand_machineType'] = ondemand?.machineType || null;
+        resultObj['ondemand_specs'] = ondemand?.specs || null;
+    
+        if (series === 'C2D') {
+          ['sud', '1year', '3year'].forEach(mode => {
+            resultObj[`${mode}_price`] = ondemand?.price || null;
+            resultObj[`${mode}_url`] = ondemand?.url || null;
+            resultObj[`${mode}_machineType`] = ondemand?.machineType || null;
+            resultObj[`${mode}_specs`] = ondemand?.specs || null;
+          });
+        } else {
+          const sud = await sendToComputeContainer('sud', { ...rowWithMeta, mode: 'sud' });
+          resultObj['sud_price'] = sud?.price || null;
+          resultObj['sud_url'] = sud?.url || null;
+          resultObj['sud_machineType'] = sud?.machineType || null;
+          resultObj['sud_specs'] = sud?.specs || null;
+    
+          const [year1, year3] = await Promise.all([
+            sendToComputeContainer('1year', { ...rowWithMeta, mode: '1year' }),
+            sendToComputeContainer('3year', { ...rowWithMeta, mode: '3year' }),
+          ]);
+          resultObj['1year_price'] = year1?.price || null;
+          resultObj['1year_url'] = year1?.url || null;
+          resultObj['1year_machineType'] = year1?.machineType || null;
+          resultObj['1year_specs'] = year1?.specs || null;
+    
+          resultObj['3year_price'] = year3?.price || null;
+          resultObj['3year_url'] = year3?.url || null;
+          resultObj['3year_machineType'] = year3?.machineType || null;
+          resultObj['3year_specs'] = year3?.specs || null;
+        }
+    
+      } else if (series === 'E2' || series === 'C2D') {
+        // REGULAR or others with E2 or C2D
+        const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });
+        resultObj['ondemand_price'] = ondemand?.price || null;
+        resultObj['ondemand_url'] = ondemand?.url || null;
+        resultObj['ondemand_machineType'] = ondemand?.machineType || null;
+        resultObj['ondemand_specs'] = ondemand?.specs || null;
+    
+        // Copy to sud
+        resultObj['sud_price'] = ondemand?.price || null;
+        resultObj['sud_url'] = ondemand?.url || null;
+        resultObj['sud_machineType'] = ondemand?.machineType || null;
+        resultObj['sud_specs'] = ondemand?.specs || null;
+    
+        const [year1, year3] = await Promise.all([
+          sendToComputeContainer('1year', { ...rowWithMeta, mode: '1year' }),
+          sendToComputeContainer('3year', { ...rowWithMeta, mode: '3year' }),
+        ]);
+        resultObj['1year_price'] = year1?.price || null;
+        resultObj['1year_url'] = year1?.url || null;
+        resultObj['1year_machineType'] = year1?.machineType || null;
+        resultObj['1year_specs'] = year1?.specs || null;
+    
+        resultObj['3year_price'] = year3?.price || null;
+        resultObj['3year_url'] = year3?.url || null;
+        resultObj['3year_machineType'] = year3?.machineType || null;
+        resultObj['3year_specs'] = year3?.specs || null;
+    
+      } else {
+        // Full parallel mode
+        const [sud, ondemand, year1, year3] = await Promise.all(
+          ['sud', 'ondemand', '1year', '3year'].map(mode =>
+            sendToComputeContainer(mode, { ...rowWithMeta, mode }))
+        );
+    
+        const results = { sud, ondemand, '1year': year1, '3year': year3 };
+    
+        for (const mode of ['sud', 'ondemand', '1year', '3year']) {
+          const result = results[mode];
+          resultObj[`${mode}_price`] = result?.price || null;
+          resultObj[`${mode}_url`] = result?.url || null;
+          resultObj[`${mode}_machineType`] = result?.machineType || null;
+          resultObj[`${mode}_specs`] = result?.specs || null;
+        }
       }
-
+    
       computeResults[row.Sl] = resultObj;
       console.log(`[validate-and-run.js] ✅ Completed compute for Sl ${row.Sl}`);
     }
+    
 
     fs.writeFileSync(RESULTS_FILE, JSON.stringify(computeResults, null, 2));
     console.log(`[validate-and-run.js] ✅ Results written to ${RESULTS_FILE}`);

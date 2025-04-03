@@ -323,23 +323,36 @@ async function sendToComputeContainer(mode, payload) {
 
 
     const sheet = await doc.addSheet({
-        title: "ComputeEngine",
-        headerValues: [
-      'Sl',
-      'sud_price', 'sud_url', 'sud_machineType', 'sud_specs',
-      'ondemand_price', 'ondemand_url', 'ondemand_machineType', 'ondemand_specs',
-      '1year_price', '1year_url', '1year_machineType', '1year_specs',
-      '3year_price', '3year_url', '3year_machineType', '3year_specs',
-      'timestamp'
-    ] });
+      title: "ComputeEngine",
+      headerValues: [
+          'Sl', 'machineType', 'specs', 'sud_price', 'sud_url',
+          'ondemand_price', 'ondemand_url',
+          '1year_price', '1year_url',
+          '3year_price', '3year_url',
+          'timestamp'
+      ]
+  });
 
     const defaultSheet = doc.sheetsByTitle['Sheet1'];
     if (defaultSheet) {
     await defaultSheet.delete();
     }
 
-    
-    const resultArray = Object.values(computeResults);
+
+    const resultArray = Object.values(computeResults).map(result => ({
+      Sl: result.Sl,
+      machineType: result.sud_machineType,
+      specs: result.sud_specs,
+      sud_price: result.sud_price,
+      sud_url: result.sud_url,
+      ondemand_price: result.ondemand_price,
+      ondemand_url: result.ondemand_url,
+      '1year_price': result['1year_price'],
+      '1year_url': result['1year_url'],
+      '3year_price': result['3year_price'],
+      '3year_url': result['3year_url'],
+      timestamp: result.timestamp
+  }));
 
     await sheet.addRows(resultArray);
 

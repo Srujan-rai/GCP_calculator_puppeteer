@@ -362,49 +362,61 @@ async function selectMachineType(pageOrFrame, value) {
 
 
 async function setNumberOfvCPUs(page, vCPUs) {
-  // Skip setting if vCPUs is zero
   if (vCPUs === 0) {
     console.log("❌ Skipping vCPUs as the value is zero");
-    return; // Skip the rest of the function
+    return;
   }
 
-  // Wait for the input element to be available
   console.log(`Setting vCPUs to ${vCPUs}`);
 
-  // Set the value of the input element
-  await page.evaluate((vCPUs) => {
-    const inputElement = document.querySelector('#i12');
-    if (inputElement) {
-      inputElement.value = vCPUs; // Set the value
-      inputElement.dispatchEvent(new Event('input', { bubbles: true })); // Trigger the input event
-    }
-  }, vCPUs);
-  console.log(`✅ vCPUs set to ${vCPUs}`);
+  try {
+    const selector = 'input[type="number"][min="2"][max="224"]';
+
+    // Wait for input to appear and become visible
+    await page.waitForSelector(selector, { visible: true, timeout: 5000 });
+
+    // Focus, select, clear, and type new value
+    const input = await page.$(selector);
+    await input.click({ clickCount: 3 }); // select all
+    await page.keyboard.press('Backspace'); // extra safety
+    await page.type(selector, vCPUs.toString(), { delay: 100 });
+    await page.keyboard.press('Tab'); // to trigger blur/event handling
+
+    console.log(`✅ vCPUs set to ${vCPUs}`);
+  } catch (err) {
+    console.error(`❌ Failed to set vCPUs: ${err.message}`);
+  }
 }
 
 
 
-
-
 async function setAmountOfMemory(page, memory) {
-  // Skip setting if memory is zero
+  const xpathSelector = '//input[@id="i13"]'; // Using XPath to target input by id
+
   if (memory === 0) {
     console.log("❌ Skipping Memory as the value is zero");
-    return; // Skip the rest of the function
+    return;
   }
 
-  // Wait for the input element to be available
   console.log(`Setting Memory to ${memory} GB`);
 
-  // Set the value of the input element
-  await page.evaluate((memory) => {
-    const inputElement = document.querySelector('#i13');
-    if (inputElement) {
-      inputElement.value = memory; // Set the value
-      inputElement.dispatchEvent(new Event('input', { bubbles: true })); // Trigger the input event
-    }
-  }, memory);
-  console.log(`✅ Memory set to ${memory} GB`);
+  try {
+    const selector = 'input[type="number"][min="2"][max="896"]';
+
+    // Wait for input to appear and become visible
+    await page.waitForSelector(selector, { visible: true, timeout: 5000 });
+
+    // Focus, select, clear, and type new value
+    const input = await page.$(selector);
+    await input.click({ clickCount: 3 }); // select all
+    await page.keyboard.press('Backspace'); // extra safety
+    await page.type(selector, memory.toString(), { delay: 100 });
+    await page.keyboard.press('Tab'); // to trigger blur/event handling
+
+    console.log(`✅ vCPUs set to ${memory}`);
+  } catch (err) {
+    console.error(`❌ Failed to set vCPUs: ${err.message}`);
+  }
 }
 
 
@@ -697,9 +709,8 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await selectMachineType(page,row["Machine Type"]);
       await sleep(2000)
       await setNumberOfvCPUs(page,Number(row["vCPUs"]));
-      await sleep(2000)
+      await sleep(5000)
       await setAmountOfMemory(page,Number(row["RAM"]));
-      await sleep(2000)
       await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
       
       /*

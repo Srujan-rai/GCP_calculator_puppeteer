@@ -337,7 +337,10 @@ async function sendToComputeContainer(mode, payload) {
     if (defaultSheet) {
     await defaultSheet.delete();
     }
+
+    
     const resultArray = Object.values(computeResults);
+
     await sheet.addRows(resultArray);
 
     await makeSheetPublic(doc.spreadsheetId);

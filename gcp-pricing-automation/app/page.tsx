@@ -11,7 +11,7 @@ export default function HomePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('🚀 Triggering automation...');
+    setStatus('Triggering automation...');
     setLogs([]);
     setStreamActive(true);
 
@@ -52,7 +52,7 @@ export default function HomePage() {
         onSubmit={handleSubmit}
         className="w-full max-w-lg bg-zinc-800 border border-zinc-700 p-6 rounded-xl shadow-lg space-y-4"
       >
-        <h1 className="text-2xl font-bold text-white mb-2">🚀 GCP Cost Estimator Automation</h1>
+        <h1 className="text-2xl font-bold text-white mb-2">GCP Cost Estimator Automation</h1>
 
         <div>
           <label className="block text-sm font-medium text-zinc-300">Google Sheet Link</label>

@@ -386,8 +386,8 @@ async function setNumberOfvCPUs(page, vCPUs) {
     await page.keyboard.press('Backspace'); // Ensure it's cleared
 
     // Now type the new value
-    await page.type(selector, vCPUs.toString(), { delay: 100 });
-    await page.keyboard.press('Tab');
+    await page.type(selector, vCPUs.toString(), { delay: 1 });
+    await page.keyboard.press('Enter');
 
     console.log(`✅ vCPUs set to ${vCPUs}`);
   } catch (err) {
@@ -448,57 +448,27 @@ async function setBootDiskSize(pageOrFrame, sizeInGB) {
 }
 
 
-async function toggleSustainedUseDiscount(pageOrFrame, enable = false) {
-  const toggleSelector = 'button[role="switch"][aria-label="Add sustained use discounts"]';
-  const checkMarkPath = 'M9.55 18.2'; // enabled
-  const crossMarkPath = 'M6.4 19.2';  // disabled
-
-  console.log(`🎯 Ensuring Sustained Use Discount is ${enable ? 'ENABLED' : 'DISABLED'}`);
-
+async function toggleSustainedUseDiscount(pageOrFrame) {
   try {
-    //await pageOrFrame.waitForSelector(toggleSelector, { visible: true, timeout: 10000 });
+    // Select the button or checkbox for "Add sustained use discounts"
+    const selector = 'button[role="switch"][aria-checked="false"]'; // Targets the button in the off state
+    const inputSelector = 'input[type="checkbox"]'; // Targets the input checkbox directly
 
-    const toggle = await pageOrFrame.$(toggleSelector);
-    if (!toggle) throw new Error('❌ Toggle button not found');
+    // Wait for the checkbox/button to appear
+    //await pageOrFrame.waitForSelector(selector, { visible: true, timeout: 5000 });
 
-    const currentState = await pageOrFrame.evaluate(el => el.getAttribute('aria-checked') === 'true', toggle);
+    // Click the button to toggle the checkbox
+    await pageOrFrame.click(selector);
 
-    if (currentState === enable) {
-      console.log(`✅ Sustained Use Discount is already ${enable ? 'enabled' : 'disabled'}`);
-      return;
-    }
+    // Alternatively, if you prefer to directly click the input checkbox element:
+    // await pageOrFrame.click(inputSelector);
 
-    // Simulate actual DOM click
-    await pageOrFrame.evaluate(el => {
-      const event = new MouseEvent('click', {
-        view: window,
-        bubbles: true,
-        cancelable: true
-      });
-      el.dispatchEvent(event);
-    }, toggle);
-
-    await pageOrFrame.waitForTimeout?.(1000) || await new Promise(r => setTimeout(r, 1000));
-
-    const verified = await pageOrFrame.evaluate(({ selector, enable, checkMarkPath, crossMarkPath }) => {
-      const btn = document.querySelector(selector);
-      if (!btn) return false;
-
-      const path = btn.querySelector('svg path')?.getAttribute('d') || '';
-      return enable ? path.includes(checkMarkPath) : path.includes(crossMarkPath);
-    }, { selector: toggleSelector, enable, checkMarkPath, crossMarkPath });
-
-    if (verified) {
-      console.log(`✅ Sustained Use Discount successfully toggled to ${enable ? 'enabled' : 'disabled'}`);
-    } else {
-      throw new Error('❌ Toggle verification failed: SVG path did not update');
-    }
-
+    console.log('✅ Sustained use discount toggled successfully');
   } catch (err) {
-    console.error(`❌ Failed to toggle Sustained Use Discount: ${err.message}`);
-    throw err;
+    console.error(`❌ Failed to toggle sustained use discount: ${err.message}`);
   }
 }
+
 
 
 async function selectRegion(pageOrFrame, value) {
@@ -680,7 +650,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       console.log(`\n🎯 Starting automation for row ${sl}...`);
       
       browser = await puppeteer.launch({
-        headless: false,
+        headless: true,
         args: ['--no-sandbox']
       });
       
@@ -722,11 +692,11 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await setAmountOfMemory(page,Number(row["RAM"]));
       await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
       
-      /*
+      
       if (row["mode"]==="sud"){
-        await toggleSustainedUseDiscount(page,true);
+        await toggleSustainedUseDiscount(page);
       }
-        */
+      
       
   
       await selectRegion(page,row["Datacenter Location"]);

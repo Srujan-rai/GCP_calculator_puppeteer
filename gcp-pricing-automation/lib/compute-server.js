@@ -375,12 +375,19 @@ async function setNumberOfvCPUs(page, vCPUs) {
     // Wait for input to appear and become visible
     await page.waitForSelector(selector, { visible: true, timeout: 5000 });
 
-    // Focus, select, clear, and type new value
+    // Focus on the input and clear any existing value
     const input = await page.$(selector);
-    await input.click({ clickCount: 3 }); // select all
-    await page.keyboard.press('Backspace'); // extra safety
+
+    // Select all text and clear it with backspace
+    await input.click({ clickCount: 3 });  // Select the whole input text
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Backspace'); // Ensure it's cleared
+
+    // Now type the new value
     await page.type(selector, vCPUs.toString(), { delay: 100 });
-    await page.keyboard.press('Tab'); // to trigger blur/event handling
+    await page.keyboard.press('Tab');
 
     console.log(`✅ vCPUs set to ${vCPUs}`);
   } catch (err) {
@@ -390,8 +397,8 @@ async function setNumberOfvCPUs(page, vCPUs) {
 
 
 
+
 async function setAmountOfMemory(page, memory) {
-  const xpathSelector = '//input[@id="i13"]'; // Using XPath to target input by id
 
   if (memory === 0) {
     console.log("❌ Skipping Memory as the value is zero");
@@ -413,9 +420,9 @@ async function setAmountOfMemory(page, memory) {
     await page.type(selector, memory.toString(), { delay: 100 });
     await page.keyboard.press('Tab'); // to trigger blur/event handling
 
-    console.log(`✅ vCPUs set to ${memory}`);
+    console.log(`✅ memory set to ${memory}`);
   } catch (err) {
-    console.error(`❌ Failed to set vCPUs: ${err.message}`);
+    console.error(`❌ Failed to set memory: ${err.message}`);
   }
 }
 
@@ -707,9 +714,11 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await selectSeries(page,row["Series"]);
       await sleep(500);
       await selectMachineType(page,row["Machine Type"]);
-      await sleep(2000)
+      await sleep(1000)
+      if (row["Machine Type"]==="Custom machine type"){
       await setNumberOfvCPUs(page,Number(row["vCPUs"]));
-      await sleep(5000)
+      }
+      await sleep(3000)
       await setAmountOfMemory(page,Number(row["RAM"]));
       await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
       

@@ -299,6 +299,7 @@ async function sendToComputeContainer(mode, payload) {
     
       computeResults[row.Sl] = resultObj;
       console.log(`[validate-and-run.js] ✅ Completed compute for Sl ${row.Sl}`);
+      console.log(`[validate-and-run.js] ✅ Results: ${JSON.stringify(resultObj, null, 2)}`);
     }
     
 

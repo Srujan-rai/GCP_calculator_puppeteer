@@ -209,30 +209,44 @@ async function setTotalInstanceUsageTime(page, hours) {
 async function selectOperatingSystem(page, osText) {
   console.log(`💻 Selecting Operating System: "${osText}"`);
 
-  const dropdownTrigger = 'div.S8daBe-aPP78e';
+  const dropdownTrigger = 'div[role="combobox"].rHGeGc-TkwUic';
+  const listboxSelector = 'ul[role="listbox"]';
   const optionSelector = 'li[role="option"]';
 
+  // Wait for the dropdown and ensure it's focused
   await page.waitForSelector(dropdownTrigger, { visible: true });
-  await page.click(dropdownTrigger);
+  console.log('📂 Dropdown found, focusing and clicking...');
+  
+  // Focus and click the dropdown
+  await page.focus(dropdownTrigger);
+  await page.click(dropdownTrigger, { delay: 300 });
   console.log('📂 Dropdown clicked, waiting for options...');
 
-  await new Promise(resolve => setTimeout(resolve, 1000)); // wait for options to render
+  // Retry waiting for the listbox with a longer timeout
+  const waitForListbox = page.waitForSelector(listboxSelector, { visible: true, timeout: 10000 }); // Increased to 10s
+  const listboxVisible = await waitForListbox.catch(err => false); // Avoids throwing error immediately
 
-  // Run this inside the browser context to find & click the item
+  if (!listboxVisible) {
+    console.error("❌ Listbox didn't appear in time, but proceeding...");
+  } else {
+    console.log('📄 Options list visible...');
+  }
+
+  // Now try to click the matching option
   const didClick = await page.evaluate((selector, osText) => {
-      const items = Array.from(document.querySelectorAll(selector));
-      for (const item of items) {
-          if (item.innerText.trim().toLowerCase().includes(osText.toLowerCase())) {
-              item.scrollIntoView({ behavior: 'instant', block: 'center' });
-              item.click();
-              return true;
-          }
+    const items = Array.from(document.querySelectorAll(selector));
+    for (const item of items) {
+      if (item.innerText.trim().toLowerCase().includes(osText.toLowerCase())) {
+        item.scrollIntoView({ behavior: 'instant', block: 'center' });
+        item.click();
+        return true;
       }
-      return false;
+    }
+    return false;
   }, optionSelector, osText);
 
   if (!didClick) {
-      throw new Error(`❌ OS option not found or not clickable: "${osText}"`);
+    throw new Error(`❌ OS option not found or not clickable: "${osText}"`);
   }
 
   console.log(`✅ OS successfully selected: "${osText}"`);
@@ -264,16 +278,33 @@ async function selectProvisioningModel(page, model) {
 async function selectMachineFamily(pageOrFrame, value) {
   console.log(`🏗 Selecting Machine Family: "${value}"`);
 
-  const dropdownOpener = await pageOrFrame.$('div.S8daBe-aPP78e');
+  // Ensure the dropdown opener is present and visible
+  const dropdownOpener = await pageOrFrame.$('div[role="combobox"].rHGeGc-TkwUic');
   if (!dropdownOpener) throw new Error('❌ Dropdown opener not found');
+
+  // Ensure the dropdown opener is visible
+  const isOpenerVisible = await dropdownOpener.isIntersectingViewport();
+  if (!isOpenerVisible) throw new Error('❌ Dropdown opener is not visible');
+
+  // Open the dropdown by clicking it
+  console.log('📂 Dropdown found, clicking...');
   await dropdownOpener.click();
 
-  console.log('📂 Dropdown clicked, waiting for options...');
-  //await pageOrFrame.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 10000 });
+  // Wait for the listbox (dropdown options) to be rendered
+  console.log('📄 Waiting for options list to appear...');
+  try {
+    await pageOrFrame.waitForSelector('ul[role="listbox"]', { timeout: 20000 });
+    console.log('📄 Options list is now visible');
+  } catch (e) {
+    throw new Error('❌ Dropdown options did not appear in time');
+  }
 
+  // Now, find and click the desired option
   const optionFound = await pageOrFrame.evaluate((value) => {
     const options = [...document.querySelectorAll('li[role="option"] span[jsname="K4r5Ff"]')];
-    const target = options.find(span => span.textContent.trim().toLowerCase().includes(value.toLowerCase()));
+    console.log("👀 Available options:", options.map(option => option.textContent.trim()));
+
+    const target = options.find(span => span.textContent.trim().toLowerCase() === value.toLowerCase());
     if (target) {
       target.scrollIntoView({ behavior: 'instant', block: 'center' });
       target.click();
@@ -282,34 +313,68 @@ async function selectMachineFamily(pageOrFrame, value) {
     return false;
   }, value);
 
-  if (!optionFound) throw new Error(`❌ Machine Family "${value}" not found in dropdown`);
+  if (!optionFound) {
+    throw new Error(`❌ Machine Family "${value}" not found in dropdown`);
+  }
+
   console.log(`✅ Machine Family selected: ${value}`);
 }
 
-
-
-async function selectSeries(pageOrFrame, value ) {
+async function selectSeries(pageOrFrame, value) {
   console.log(`📘 Selecting Series: "${value}"`);
 
-  const dropdownOpener = await pageOrFrame.$('div.S8daBe-aPP78e');
+  // Find the dropdown opener element
+  const dropdownOpener = await pageOrFrame.$('div[role="combobox"].rHGeGc-TkwUic');
   if (!dropdownOpener) throw new Error('❌ Series dropdown trigger not found');
-  await dropdownOpener.click();
-  console.log('📂 Dropdown clicked, waiting for options...');
 
-  // Wait for any option to appear first
-  //await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"]', { visible: true, timeout: 10000 });
+  // Check if the dropdown is already expanded
+  let isExpanded = await dropdownOpener.evaluate((el) => el.getAttribute('aria-expanded') === 'true');
+  if (!isExpanded) {
+    console.log('📂 Dropdown clicked, waiting for options...');
+    await dropdownOpener.click(); // Click to expand the dropdown
+    await pageOrFrame.waitForTimeout(1000); // Wait a bit to ensure dropdown is expanding
+    isExpanded = await dropdownOpener.evaluate((el) => el.getAttribute('aria-expanded') === 'true');
+  }
 
-  // Then wait specifically for the option you want to appear in DOM
-  
+  if (!isExpanded) {
+    throw new Error('❌ Failed to expand the dropdown');
+  }
 
-  // Finally evaluate and click it
+  // Add additional logging and try to handle the dropdown more reliably
+  console.log('⌛ Waiting for dropdown options to appear...');
+  let retries = 3;
+  let optionsVisible = false;
+
+  while (retries > 0 && !optionsVisible) {
+    try {
+      // Wait for the listbox to be visible, increased timeout
+      await pageOrFrame.waitForSelector('ul[role="listbox"] li[role="option"]', { visible: true, timeout: 30000 });
+      optionsVisible = true; // Successfully found the options
+      console.log('📄 Dropdown options visible');
+    } catch (e) {
+      console.log('❌ Dropdown options not visible, retrying...');
+      retries--;
+      if (retries === 0) {
+        throw new Error('❌ Dropdown options did not appear in time');
+      }
+      await pageOrFrame.waitForTimeout(3000); // Wait before retrying
+    }
+  }
+
+  // Scroll the dropdown if necessary to make sure options are visible
+  const scrollDropdown = await pageOrFrame.$('ul[role="listbox"]');
+  if (scrollDropdown) {
+    await pageOrFrame.evaluate((dropdown) => dropdown.scrollIntoView(), scrollDropdown);
+  }
+
+  // Find and select the desired option
   const clicked = await pageOrFrame.evaluate((value) => {
     const items = Array.from(document.querySelectorAll('ul[role="listbox"] li[role="option"]'));
     for (const item of items) {
       const label = item.querySelector('span[jsname="K4r5Ff"]');
       if (label && label.textContent.trim().toLowerCase() === value.toLowerCase()) {
-        label.scrollIntoView({ block: 'center' });
-        label.click();
+        label.scrollIntoView({ block: 'center' }); // Scroll to make the option visible
+        label.click(); // Click the option
         return true;
       }
     }
@@ -319,6 +384,10 @@ async function selectSeries(pageOrFrame, value ) {
   if (!clicked) throw new Error(`❌ Series "${value}" not found in dropdown`);
   console.log(`✅ Series selected: ${value}`);
 }
+
+
+
+
 
 
 
@@ -361,39 +430,46 @@ async function selectMachineType(pageOrFrame, value) {
 }
 
 
-async function setNumberOfvCPUs(page, vCPUs) {
+async function setNumberOfvCPUs(page, vCPUs, min, max) {
   if (vCPUs === 0) {
     console.log("❌ Skipping vCPUs as the value is zero");
     return;
   }
 
-  console.log(`Setting vCPUs to ${vCPUs}`);
+  console.log(`Setting vCPUs to ${vCPUs} (min: ${min}, max: ${max})`);
 
   try {
-    const selector = 'input[type="number"][min="2"][max="224"]';
+    // Dynamically create the selector using the provided min and max values
+    const selector = `input[type="number"][min="${min}"][max="${max}"]`;
 
-    // Wait for input to appear and become visible
+    // Wait for the input element to appear and become visible
     await page.waitForSelector(selector, { visible: true, timeout: 5000 });
 
-    // Focus on the input and clear any existing value
+    // Get the input element using the dynamic selector
     const input = await page.$(selector);
 
-    // Select all text and clear it with backspace
-    await input.click({ clickCount: 3 });  // Select the whole input text
-    await page.keyboard.press('Backspace');
-    await page.keyboard.press('Backspace');
-    await page.keyboard.press('Backspace');
-    await page.keyboard.press('Backspace'); // Ensure it's cleared
+    // Ensure the input element was found
+    if (input) {
+      // Focus on the input and clear any existing value
+      await input.click({ clickCount: 3 }); // Select the whole input text
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Backspace'); // Ensure it's cleared
 
-    // Now type the new value
-    await page.type(selector, vCPUs.toString(), { delay: 1 });
-    await page.keyboard.press('Enter');
+      // Now type the new value
+      await page.type(selector, vCPUs.toString(), { delay: 1 });
+      await page.keyboard.press('Enter');
 
-    console.log(`✅ vCPUs set to ${vCPUs}`);
+      console.log(`✅ vCPUs set to ${vCPUs}`);
+    } else {
+      console.error('❌ vCPUs input not found');
+    }
   } catch (err) {
     console.error(`❌ Failed to set vCPUs: ${err.message}`);
   }
 }
+
 
 
 
@@ -450,25 +526,28 @@ async function setBootDiskSize(pageOrFrame, sizeInGB) {
 
 async function toggleSustainedUseDiscount(pageOrFrame) {
   try {
-    // Select the button or checkbox for "Add sustained use discounts"
-    const selector = 'button[role="switch"][aria-checked="false"]'; // Targets the button in the off state
-    const inputSelector = 'input[type="checkbox"]'; // Targets the input checkbox directly
+    // Selector for the checkbox (update if needed)
+    const checkboxSelector = '.eBlXUe-lw9akd';
 
-    // Wait for the checkbox/button to appear
-    //await pageOrFrame.waitForSelector(selector, { visible: true, timeout: 5000 });
+    // Wait for the checkbox to appear
+    //await pageOrFrame.waitForSelector(checkboxSelector, { visible: true });
 
-    // Click the button to toggle the checkbox
-    await pageOrFrame.click(selector);
+    // Optionally check current state by icon (check vs cross)
+    const isEnabled = await pageOrFrame.$eval(checkboxSelector, el => {
+      const checkIcon = el.querySelector('path[d*="M9.55 18.2"]');  // check icon path
+      return !!checkIcon;  // true if check icon is present
+    });
 
-    // Alternatively, if you prefer to directly click the input checkbox element:
-    // await pageOrFrame.click(inputSelector);
-
-    console.log('✅ Sustained use discount toggled successfully');
+    if (!isEnabled) {
+      await pageOrFrame.click(checkboxSelector);
+      console.log("✅ Sustained use discount enabled.");
+    } else {
+      console.log("🔄 Sustained use discount already enabled.");
+    }
   } catch (err) {
-    console.error(`❌ Failed to toggle sustained use discount: ${err.message}`);
+    console.error("❌ Failed to toggle Sustained Use Discount:", err);
   }
 }
-
 
 
 async function selectRegion(pageOrFrame, value) {
@@ -650,7 +729,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       console.log(`\n🎯 Starting automation for row ${sl}...`);
       
       browser = await puppeteer.launch({
-        headless: true,
+        headless: false,
         args: ['--no-sandbox']
       });
       
@@ -679,14 +758,28 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await sleep(500);
       await selectProvisioningModel(page,row["Machine Class"]);
       await sleep(500);
-      await selectMachineFamily(page,row["Machine Family"]);
+      //await selectMachineFamily(page,row["Machine Family"]);
       await sleep(500);
-      await selectSeries(page,row["Series"]);
-      await sleep(500);
-      await selectMachineType(page,row["Machine Type"]);
+      //await selectSeries(page,row["Series"]);
       await sleep(1000)
-      if (row["Machine Type"]==="Custom machine type"){
-      await setNumberOfvCPUs(page,Number(row["vCPUs"]));
+      const seriesLimits = {
+        "N1": { min: 1, max: 96 },
+        "N2": { min: 2, max: 128 },
+        "N4": { min: 2, max: 80 },
+        "E2": { min: 0.25, max: 32 },
+        "N2D": { min: 2, max: 224 },
+        "G2": { min: 4, max: 96 }
+      };
+      
+      if (row["Machine Type"] === "Custom machine type" &&
+          ["N1", "N2", "N4", "E2", "N2D", "G2"].includes(row["Series"])) {
+        
+        const series = row["Series"];
+        const limits = seriesLimits[series]; 
+      
+        if (limits) {
+          await setNumberOfvCPUs(page, Number(row["vCPUs"]), limits.min, limits.max);
+        }
       }
       await sleep(3000)
       await setAmountOfMemory(page,Number(row["RAM"]));

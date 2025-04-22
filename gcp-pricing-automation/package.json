@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "concurrently \"npm run start:containers\" \"next dev\"",
-    "start:containers": "docker-compose start",
-    "stop:containers": "docker-compose stop",
-    "rebuild:containers": "docker-compose up --build --detach",
-    "clean:containers": "docker-compose down --volumes --remove-orphans",
+    "start:containers": "docker compose start",
+    "stop:containers": "docker compose stop",
+    "rebuild:containers": "docker compose up --build --detach",
+    "clean:containers": "docker compose down --volumes --remove-orphans",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

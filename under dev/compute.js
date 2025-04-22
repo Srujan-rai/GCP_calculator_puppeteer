@@ -138,7 +138,7 @@ async function selectOperatingSystem(page, osText = 'Paid: Red Hat Enterprise Li
     const dropdownTrigger = 'div.S8daBe-aPP78e';
     const optionSelector = 'li[role="option"]';
 
-    await page.waitForSelector(dropdownTrigger, { visible: true });
+    //await page.waitForSelector(dropdownTrigger, { visible: true });
     await page.click(dropdownTrigger);
     console.log('📂 Dropdown clicked, waiting for options...');
 
@@ -185,7 +185,7 @@ async function selectProvisioningModel(page, model = 'Preemptible') {
     console.log('✅ Provisioning Model set to Preemptible (Spot)');
 }
 
-async function selectMachineFamily(pageOrFrame, value = 'General Purpose') {
+async function selectMachineFamily(pageOrFrame, value = 'Memory-optimized') {
     console.log(`🏗 Selecting Machine Family: "${value}"`);
   
     const dropdownOpener = await pageOrFrame.$('div.S8daBe-aPP78e');
@@ -193,7 +193,7 @@ async function selectMachineFamily(pageOrFrame, value = 'General Purpose') {
     await dropdownOpener.click();
   
     console.log('📂 Dropdown clicked, waiting for options...');
-    await pageOrFrame.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 10000 });
+    //await pageOrFrame.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 10000 });
   
     const optionFound = await pageOrFrame.evaluate((value) => {
       const options = [...document.querySelectorAll('li[role="option"] span[jsname="K4r5Ff"]')];
@@ -419,42 +419,7 @@ async function setBootDiskSize(pageOrFrame, sizeInGB = 100) {
 
   
 async function selectCommittedUseDiscountOption(page, option= 'none' ) {
-  const labelMap = {
-    none: { id: "116none", text: "None" },
-    "1year": { id: "1161-year", text: "1 year" },
-    "3years": { id: "1163-years", text: "3 years" },
-  };
-
-  const selected = labelMap[option.toLowerCase()];
-  if (!selected) throw new Error("❌ Invalid CUD option passed");
-
-  try {
-    console.log(`🎯 Attempting to select CUD option: ${selected.text}`);
-
-    // Scroll down slowly until CUD section appears
-    const found = await page.evaluate(async () => {
-      const scrollStep = 300;
-      const delay = (ms) => new Promise(res => setTimeout(res, ms));
-      for (let i = 0; i < 30; i++) {
-        window.scrollBy(0, scrollStep);
-        await delay(300);
-        if (document.body.innerText.includes("Committed use discount options")) {
-          return true;
-        }
-      }
-      return false;
-    });
-
-    if (!found) throw new Error("❌ Could not find CUD section after scrolling.");
-
-    // Click the label matching the correct option
-    await page.waitForSelector(`label[for="${selected.id}"]`, { timeout: 8000 });
-    await page.click(`label[for="${selected.id}"]`);
-    console.log(`✅ '${selected.text}' CUD option selected successfully`);
-  } catch (err) {
-    console.error(`❌ Failed to select '${option}' CUD option: ${err.message}`);
-    throw err;
-  }
+  return "srujan rai"
 }
 
   
@@ -534,7 +499,7 @@ async function calculateGCPCosts() {
     try {
         console.log('Launching headless browser...');
         browser = await puppeteer.launch({
-            headless: true,
+            headless: false,
             args: ['--no-sandbox']
         });
 
@@ -550,6 +515,7 @@ async function calculateGCPCosts() {
         await setTotalInstanceUsageTime(page);
         await selectOperatingSystem(page);
         await selectProvisioningModel(page);
+
         await selectMachineFamily(page);
         await selectSeries(page);
         await selectMachineType(page);

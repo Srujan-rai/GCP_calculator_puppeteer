@@ -519,49 +519,172 @@ async function toggleSustainedUseDiscount(pageOrFrame) {
 
 
 
+
+//33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333//
+
 async function selectRegion(ctx, regionValue) {
+  const regionLabelText = 'Region';
+  const overallTimeoutMs = 25000; 
+  const shortTimeoutMs = 5000; 
+
+  const triggerXPath = `//div[@role='combobox' and .//span[normalize-space(.)='${regionLabelText}']]`;
+  const triggerExpandedXPath = `${triggerXPath}[@aria-expanded='true']`;
+  const dropdownListSelector = `ul[role='listbox'][aria-label='${regionLabelText}']`;
+  const anyDropdownOptionSelector = `${dropdownListSelector} li[role='option']`;
+  const specificDropdownOptionSelector = `li[role="option"][data-value="${regionValue}"]`;
+  const specificOptionInListSelector = `${dropdownListSelector} ${specificDropdownOptionSelector}`;
+
+
+  console.log(`[Robust Select] Attempting to select region: ${regionValue}`);
+
+  let triggerHandle;
+  let optionHandle;
+
   try {
-    // Step 1: Find the "Region" label and click the parent that triggers the dropdown
-    const clicked = await ctx.evaluate((labelText) => {
-      const spanElements = Array.from(document.querySelectorAll('span'));
-      const regionLabel = spanElements.find(span => span.textContent.trim() === labelText);
-      if (!regionLabel) return false;
+    // --- Step 1: Find and Click the Dropdown Trigger (with verification) ---
+    console.log(` - Waiting for dropdown trigger: ${triggerXPath}`);
+    triggerHandle = await ctx.waitForXPath(triggerXPath, { visible: true, timeout: overallTimeoutMs });
+    if (!triggerHandle) throw new Error(`Dropdown trigger not found.`);
 
-      // Climb up to the clickable parent (usually div[role=combobox] or button)
-      let clickable = regionLabel;
-      for (let i = 0; i < 5; i++) {
-        if (!clickable) break;
-        if (clickable.getAttribute('role') === 'combobox' || clickable.tagName === 'DIV') {
-          clickable.click();
-          return true;
+    console.log(` - Clicking dropdown trigger.`);
+    await triggerHandle.click();
+    await ctx.waitForTimeout(100); // Brief pause after click
+
+    // --- Step 1b: Verify Dropdown Started Opening ---
+    console.log(` - Verifying dropdown opened (checking aria-expanded=true)`);
+    try {
+        // Wait for the same trigger element to have aria-expanded="true"
+        await ctx.waitForXPath(triggerExpandedXPath, { timeout: shortTimeoutMs });
+        console.log(`   - aria-expanded="true" confirmed.`);
+    } catch (expandError) {
+        console.warn(`   - aria-expanded did not become 'true' quickly. Attempting trigger click again...`);
+        await triggerHandle.click(); // Try clicking again
+        await ctx.waitForTimeout(200);
+        try {
+           await ctx.waitForXPath(triggerExpandedXPath, { timeout: shortTimeoutMs });
+           console.log(`   - aria-expanded="true" confirmed on second attempt.`);
+        } catch (expandError2) {
+            // Log current attributes for debugging
+            const ariaExpanded = await triggerHandle.evaluate(el => el.getAttribute('aria-expanded'));
+            console.error(`   - Trigger aria-expanded status after clicks: ${ariaExpanded}`);
+            throw new Error(`Dropdown did not expand (aria-expanded="true" not found) after clicking trigger.`);
         }
-        clickable = clickable.parentElement;
-      }
-      return false;
-    }, 'Region');
+    }
+    // Dispose trigger handle only after we're sure it's expanded
+    await triggerHandle.dispose(); triggerHandle = null;
 
-    if (!clicked) {
-      throw new Error(`Could not find or click region label`);
+
+    // --- Step 2: Wait for Dropdown List AND Options to Appear ---
+    console.log(` - Waiting for dropdown list container AND first option: ${anyDropdownOptionSelector}`);
+    try {
+        await ctx.waitForSelector(anyDropdownOptionSelector, { visible: true, timeout: shortTimeoutMs });
+        console.log(`   - Dropdown list with options appeared.`);
+    } catch(listError) {
+        console.warn(`   - Dropdown list/options did not appear quickly using selector ${anyDropdownOptionSelector}. Proceeding to wait for specific option.`);
     }
 
-    // Step 2: Wait for dropdown and select item
-    const optionSelector = `li[role="option"][data-value="${regionValue}"]`;
-    await ctx.waitForSelector(optionSelector, { visible: true, timeout: 10000 });
 
-    await ctx.evaluate((selector) => {
-      const el = document.querySelector(selector);
-      if (el) {
-        el.scrollIntoView({ block: 'center' });
-        el.click();
-      }
-    }, optionSelector);
+    // --- Step 3: Find and Click the Desired Option (with Retry and JS Click Fallback) ---
+    console.log(` - Waiting for specific option: ${specificDropdownOptionSelector}`);
+    let optionClicked = false;
+    const maxRetries = 3; // Increased retries
 
-    console.log(`✅ Selected region: ${regionValue}`);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`   - Attempt ${attempt}/${maxRetries}:`);
+        try {
+            // Prioritize finding the option within the list selector first
+            let currentOptionSelector = specificOptionInListSelector;
+            console.log(`     - Waiting for selector: ${currentOptionSelector}`);
+            optionHandle = await ctx.waitForSelector(currentOptionSelector, { visible: true, timeout: overallTimeoutMs / maxRetries });
+
+        } catch (errInList) {
+             console.warn(`     - Option not found within list selector (${specificOptionInListSelector}). Trying global selector: ${specificDropdownOptionSelector}`);
+             try {
+                 // Fallback: Try finding the option without the list prefix
+                 let currentOptionSelector = specificDropdownOptionSelector;
+                 console.log(`     - Waiting for selector: ${currentOptionSelector}`);
+                 optionHandle = await ctx.waitForSelector(currentOptionSelector, { visible: true, timeout: overallTimeoutMs / maxRetries });
+             } catch (errGlobal) {
+                  console.error(`     - Option not found with either selector on attempt ${attempt}.`);
+                  if (attempt === maxRetries) throw errGlobal; // Throw error on last attempt
+                  await ctx.waitForTimeout(300); // Wait longer before retry
+                  continue; // Go to next attempt
+             }
+        }
+
+        // If we have a handle, try to click it
+        if (optionHandle) {
+            try {
+                console.log(`     - Scrolling option into view.`);
+                await optionHandle.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest' }));
+                await ctx.waitForTimeout(200); // Increased pause after scroll
+
+                console.log(`     - Attempting Puppeteer click...`);
+                await optionHandle.click(); // Try standard click first
+                optionClicked = true;
+                console.log(`     - Puppeteer click successful on attempt ${attempt}.`);
+
+            } catch (clickError) {
+                console.warn(`     - Puppeteer click failed on attempt ${attempt}: ${clickError.message}`);
+                console.log(`     - Attempting JavaScript click fallback...`);
+                try {
+                    // JS Click Fallback needs the specific selector string again
+                    let selectorForEval = optionHandle.toString().includes(dropdownListSelector) ? specificOptionInListSelector : specificDropdownOptionSelector; // Determine which selector found it
+                    await ctx.evaluate((selector) => {
+                        const element = document.querySelector(selector);
+                        if (element instanceof HTMLElement) {
+                             // Optional: Add some logging within evaluate for debugging
+                             // console.log('Attempting JS click on:', element);
+                             element.click();
+                        } else {
+                             console.error('Element not found or not HTMLElement for JS click:', selector);
+                             throw new Error(`Element not found or not HTMLElement for JS click: ${selector}`);
+                        }
+                    }, selectorForEval); // Pass the selector string correctly
+                    optionClicked = true;
+                    console.log(`     - JavaScript click successful on attempt ${attempt}.`);
+                } catch (jsClickError) {
+                    console.error(`     - JavaScript click also failed: ${jsClickError.message}`);
+                     if (attempt === maxRetries) throw jsClickError; // Throw if all fails on last attempt
+                }
+            } finally {
+                 if (optionHandle) {
+                     await optionHandle.dispose(); optionHandle = null; // Dispose handle after attempt
+                 }
+            }
+        } // end if(optionHandle)
+
+        if (optionClicked) {
+            break; // Exit retry loop on success
+        }
+
+        if (attempt < maxRetries) {
+             await ctx.waitForTimeout(300); // Wait longer before next retry
+        }
+
+    } // end retry loop
+
+    if (!optionClicked) {
+        throw new Error(`Failed to click option "${regionValue}" after all attempts.`);
+    }
+
+    console.log(`✅ Successfully selected region: ${regionValue}`);
+
   } catch (err) {
     console.error(`❌ Failed to select region "${regionValue}": ${err.message}`);
+    const screenshotPath = `error_select_region_${regionValue}_${Date.now()}.png`;
+    try {
+         await ctx.screenshot({ path: screenshotPath, fullPage: true });
+         console.error(`📸 Screenshot saved to: ${screenshotPath}`);
+    } catch (ssError) {
+         console.error(`   - Failed to take screenshot: ${ssError.message}`);
+    }
+    // Clean up any lingering handles
+    if (triggerHandle) await triggerHandle.dispose();
+    if (optionHandle) await optionHandle.dispose();
+    throw err; // Re-throw the error
   }
 }
-
 
 
 
@@ -569,39 +692,132 @@ async function selectRegion(ctx, regionValue) {
 
 
 async function selectCommittedUseDiscountOption(page, option) {
-  // Map the option parameter to the respective radio button ID
-  const optionMap = {
-    'ondemand': '116none',
-    '1year': '1161-year',
-    '3year': '1163-years',
+  const optionLower = option.toLowerCase();
+
+  // --- Mappings ---
+  // Map readable option to the input's 'value' attribute
+  const valueMap = {
+    'ondemand': 'none',
+    '1year': '1-year',
+    '3year': '3-years',
+  };
+  // Map readable option to the label's visible text
+  const labelTextMap = {
+    'ondemand': 'None',
+    '1year': '1 year', // Ensure this matches EXACTLY (case-sensitive)
+    '3year': '3 years', // Ensure this matches EXACTLY
   };
 
-  // Get the ID for the chosen option
-  const optionId = optionMap[option.toLowerCase()];
+  const radioButtonValue = valueMap[optionLower];
+  const labelText = labelTextMap[optionLower];
 
-  // Ensure the option exists before attempting to click
-  if (!optionId) {
-    console.log(`Invalid option: ${option}`);
-    throw new Error('Invalid committed use discount option');
+  if (!radioButtonValue || !labelText) {
+    console.log(`Invalid option provided: ${option}`);
+    throw new Error(`Invalid committed use discount option: ${option}`);
   }
 
-  // Build the selector for the label associated with the radio button using its "for" attribute
-  const labelSelector = `label[for="${optionId}"]`;
+  // --- Selection Strategies ---
+  // Define selectors for different strategies
+  const primarySelector = `input[type="radio"][value="${radioButtonValue}"] + label`;
+  const labelTextXPath = `//label[normalize-space(.)="${labelText}"]`; // Using XPath for text matching
 
-  try {
-    // Wait for the label to be visible (we wait for the label because it is clickable)
-    await page.waitForSelector(labelSelector, { visible: true, timeout: 10000 }); // Timeout to avoid waiting forever
+  // --- Attempt Logic ---
+  let selected = false;
+  const timeoutOptions = { visible: true, timeout: 5000 }; // Shorter timeout for individual attempts
 
-    // Click the label to select the corresponding radio option
-    console.log(`Selecting ${option} option...`);
-    await page.click(labelSelector);
-    
-  } catch (error) {
-    console.error(`Error selecting ${option} option:`, error);
-    throw new Error(`Failed to select committed use discount option: ${option}`);
+  // Strategy 1: Primary (Input Value + Adjacent Label CSS Selector)
+  if (!selected) {
+    try {
+      console.log(`Attempt 1: Clicking adjacent label using value: [${primarySelector}]`);
+      await page.waitForSelector(primarySelector, timeoutOptions);
+      await page.click(primarySelector);
+      // Optional: Add a short pause or verification step here if needed
+      // await page.waitForTimeout(100);
+      console.log(`Success (Attempt 1): Clicked adjacent label for value "${radioButtonValue}".`);
+      selected = true;
+    } catch (error) {
+      console.warn(`Attempt 1 Failed: Could not click adjacent label using value. ${error.message}`);
+    }
   }
+
+  // Strategy 2: Fallback 1 (Label Text XPath)
+  if (!selected) {
+    try {
+      console.log(`Attempt 2: Clicking label using text XPath: [${labelTextXPath}]`);
+      // XPath selectors need page.$x() and then operate on the handle
+      const [labelElementHandle] = await page.$x(labelTextXPath);
+      if (!labelElementHandle) {
+          throw new Error(`Label element not found with XPath: ${labelTextXPath}`);
+      }
+      // Ensure element is visible before clicking (waitForXPath might be needed depending on Puppeteer version/setup)
+      // await page.waitForXPath(labelTextXPath, timeoutOptions); // Alternative wait
+      await labelElementHandle.click();
+      // Optional: Dispose handle
+      await labelElementHandle.dispose();
+      console.log(`Success (Attempt 2): Clicked label using text "${labelText}".`);
+      selected = true;
+    } catch (error) {
+      console.warn(`Attempt 2 Failed: Could not click label using text. ${error.message}`);
+    }
+  }
+
+  // Strategy 3: Fallback 2 (Input Value -> Dynamic ID -> Label For)
+  if (!selected) {
+    try {
+      console.log(`Attempt 3: Finding input by value, getting ID, clicking label by [for]`);
+      const inputSelector = `input[type="radio"][value="${radioButtonValue}"]`;
+      await page.waitForSelector(inputSelector, timeoutOptions);
+
+      // Get the dynamic ID from the input element
+      const dynamicId = await page.$eval(inputSelector, (el) => el.id);
+
+      if (!dynamicId) {
+          throw new Error(`Could not retrieve ID for input with value "${radioButtonValue}"`);
+      }
+
+      const labelForSelector = `label[for="${dynamicId}"]`;
+      console.log(`   - Found dynamic ID: ${dynamicId}. Clicking label: [${labelForSelector}]`);
+      await page.waitForSelector(labelForSelector, timeoutOptions);
+      await page.click(labelForSelector);
+      console.log(`Success (Attempt 3): Clicked label using dynamic ID "${dynamicId}".`);
+      selected = true;
+    } catch (error) {
+      console.warn(`Attempt 3 Failed: Could not click label using dynamic ID. ${error.message}`);
+    }
+  }
+
+  // Strategy 4: Fallback 3 (Intensive JS Click on Primary Selector)
+  // Only try if the primary selector *could* potentially find the element but click failed
+  if (!selected) {
+      try {
+          console.log(`Attempt 4: Trying JS click on primary selector: [${primarySelector}]`);
+          await page.waitForSelector(primarySelector, timeoutOptions); // Ensure element exists first
+          await page.evaluate((selector) => {
+              const element = document.querySelector(selector);
+              if (element instanceof HTMLElement) {
+                  element.click();
+              } else {
+                  throw new Error(`Element not found or not HTMLElement for JS click: ${selector}`);
+              }
+          }, primarySelector);
+          console.log(`Success (Attempt 4): JS click on adjacent label for value "${radioButtonValue}".`);
+          selected = true;
+      } catch (error) {
+          console.warn(`Attempt 4 Failed: JS click on primary selector failed. ${error.message}`);
+      }
+  }
+
+
+  // Final Check
+  if (!selected) {
+    console.error(`All selection attempts failed for option: ${option}`);
+    // Optional: Add more debugging info here (e.g., screenshot, dump HTML)
+    // await page.screenshot({ path: `error_select_${option}.png` });
+    throw new Error(`Failed to select committed use discount option '${option}' after multiple attempts.`);
+  }
+
+  console.log(`Successfully selected option: ${option}`);
 }
-
 
 
 

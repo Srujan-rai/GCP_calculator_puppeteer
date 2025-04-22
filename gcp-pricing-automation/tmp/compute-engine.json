@@ -16,13 +16,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$107.87",
-    "SSD": "$86.05",
-    "Balanced SSD": "$68.37",
-    "Snapshot": "$49.87",
     "Sl": 1
   },
   {
@@ -42,13 +35,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$81.76",
-    "SSD": "$65.22",
-    "Balanced SSD": "$51.82",
-    "Snapshot": "$37.80",
     "Sl": 2
   },
   {
@@ -68,13 +54,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$431.48",
-    "SSD": "$398.53",
-    "Balanced SSD": "$371.23",
-    "Snapshot": "$341.92",
     "Sl": 3
   },
   {
@@ -94,13 +73,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$585.66",
-    "SSD": "$585.66",
-    "Balanced SSD": "$468.37",
-    "Snapshot": "$411.30",
     "Sl": 4
   },
   {
@@ -120,13 +92,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$204.89",
-    "SSD": "$190.61",
-    "Balanced SSD": "$179.05",
-    "Snapshot": "$166.95",
     "Sl": 5
   },
   {
@@ -146,13 +111,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$1,189.11",
-    "SSD": "$1,144.67",
-    "Balanced SSD": "$1,107.84",
-    "Snapshot": "$1,068.30",
     "Sl": 6
   },
   {
@@ -172,13 +130,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$991.43",
-    "SSD": "$925.55",
-    "Balanced SSD": "$870.94",
-    "Snapshot": "$812.32",
     "Sl": 7
   },
   {
@@ -198,13 +149,6 @@
     "WorkStation": "",
     "Datacenter Location": "asia-south1",
     "Avg no. of hrs": 730,
-    "Hrs/Min": "",
-    "Days/Month": "",
-    "Zonal/Regional": "",
-    "HDD": "$247.86",
-    "SSD": "$231.39",
-    "Balanced SSD": "$217.74",
-    "Snapshot": "$203.08",
     "Sl": 8
   },
   {
@@ -226,11 +170,6 @@
     "Avg no. of hrs": "7",
     "Hrs/Min": "hours",
     "Days/Month": "month",
-    "Zonal/Regional": "",
-    "HDD": "$0.27",
-    "SSD": "$0.27",
-    "Balanced SSD": "$0.27",
-    "Snapshot": "$0.27",
     "Sl": 9
   },
   {
@@ -252,11 +191,6 @@
     "Avg no. of hrs": "102",
     "Hrs/Min": "hours",
     "Days/Month": "month",
-    "Zonal/Regional": "",
-    "HDD": "$2.84",
-    "SSD": "$2.84",
-    "Balanced SSD": "$2.84",
-    "Snapshot": "$2.84",
     "Sl": 10
   }
 ]

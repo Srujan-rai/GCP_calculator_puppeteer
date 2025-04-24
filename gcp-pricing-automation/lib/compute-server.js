@@ -274,7 +274,7 @@ async function selectProvisioningModel(page, model) {
 }
 
 
-async function selectMachineFamily(page, label = "Compute-optimized") {
+async function selectMachineFamily(page, label ) {
   // Step 1: Force click dropdown by visible text
   console.log(`🔍 Selecting Machine Family: "${label}"`);
   const success = await page.evaluate((labelText) => {
@@ -321,7 +321,7 @@ async function selectMachineFamily(page, label = "Compute-optimized") {
 
 
 
-async function selectSeries(page, value = "N2") {
+async function selectSeries(page, value ) {
   // Step 1: Open the dropdown (by checking visible text "Series")
   const clicked = await page.evaluate(() => {
     const dropdowns = Array.from(document.querySelectorAll('[role="combobox"]'));
@@ -373,7 +373,7 @@ async function selectSeries(page, value = "N2") {
 
 
 
-async function selectMachineType(page, value = "c2d-standard-4") {
+async function selectMachineType(page, value ) {
   const triggered = await page.evaluate(() => {
     const allCombos = [...document.querySelectorAll('[role="combobox"]')];
     for (const combo of allCombos) {
@@ -486,6 +486,8 @@ async function setBootDiskSize(pageOrFrame, sizeInGB) {
   await input.click({ clickCount: 3 }); // Triple click selects all text
   await pageOrFrame.keyboard.press('Backspace'); // Ensure it's empty
   await input.type(sizeInGB.toString());
+  await pageOrFrame.keyboard.press('Tab'); 
+  await pageOrFrame.keyboard.press('Tab'); 
 
   console.log(`✅ Boot Disk Size set to ${sizeInGB} GB`);
 }
@@ -516,179 +518,140 @@ async function toggleSustainedUseDiscount(pageOrFrame) {
   }
 }
 
+/*=================================================================================*/
 
 
-
-
-//33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333//
-
-async function selectRegion(ctx, regionValue) {
-  const regionLabelText = 'Region';
-  const overallTimeoutMs = 25000; 
-  const shortTimeoutMs = 5000; 
-
-  const triggerXPath = `//div[@role='combobox' and .//span[normalize-space(.)='${regionLabelText}']]`;
-  const triggerExpandedXPath = `${triggerXPath}[@aria-expanded='true']`;
-  const dropdownListSelector = `ul[role='listbox'][aria-label='${regionLabelText}']`;
-  const anyDropdownOptionSelector = `${dropdownListSelector} li[role='option']`;
-  const specificDropdownOptionSelector = `li[role="option"][data-value="${regionValue}"]`;
-  const specificOptionInListSelector = `${dropdownListSelector} ${specificDropdownOptionSelector}`;
-
-
-  console.log(`[Robust Select] Attempting to select region: ${regionValue}`);
-
-  let triggerHandle;
-  let optionHandle;
-
-  try {
-    // --- Step 1: Find and Click the Dropdown Trigger (with verification) ---
-    console.log(` - Waiting for dropdown trigger: ${triggerXPath}`);
-    triggerHandle = await ctx.waitForXPath(triggerXPath, { visible: true, timeout: overallTimeoutMs });
-    if (!triggerHandle) throw new Error(`Dropdown trigger not found.`);
-
-    console.log(` - Clicking dropdown trigger.`);
-    await triggerHandle.click();
-    await ctx.waitForTimeout(100); // Brief pause after click
-
-    // --- Step 1b: Verify Dropdown Started Opening ---
-    console.log(` - Verifying dropdown opened (checking aria-expanded=true)`);
-    try {
-        // Wait for the same trigger element to have aria-expanded="true"
-        await ctx.waitForXPath(triggerExpandedXPath, { timeout: shortTimeoutMs });
-        console.log(`   - aria-expanded="true" confirmed.`);
-    } catch (expandError) {
-        console.warn(`   - aria-expanded did not become 'true' quickly. Attempting trigger click again...`);
-        await triggerHandle.click(); // Try clicking again
-        await ctx.waitForTimeout(200);
+async function verifySelection(ctx, displaySelector, expectedValuePart, timeout) {
+  // ... (verification code)
+   console.log(`       - Verifying selection (timeout: <span class="math-inline">\{timeout\}ms\)\: checking if display contains "</span>{expectedValuePart}"...`);
+   try {
+       await ctx.waitForFunction(
+           (selector, value) => {
+               const elem = document.querySelector(selector);
+               return elem && elem.textContent.includes(value);
+           },
+           { timeout: timeout },
+           displaySelector,
+           expectedValuePart
+       );
+       console.log(`       - Verification PASSED.`);
+       return true;
+   } catch (verifyError) {
         try {
-           await ctx.waitForXPath(triggerExpandedXPath, { timeout: shortTimeoutMs });
-           console.log(`   - aria-expanded="true" confirmed on second attempt.`);
-        } catch (expandError2) {
-            // Log current attributes for debugging
-            const ariaExpanded = await triggerHandle.evaluate(el => el.getAttribute('aria-expanded'));
-            console.error(`   - Trigger aria-expanded status after clicks: ${ariaExpanded}`);
-            throw new Error(`Dropdown did not expand (aria-expanded="true" not found) after clicking trigger.`);
+             const currentText = await ctx.$eval(displaySelector, el => el.textContent);
+             console.warn(`- Verification FAILED. Current display text: "${currentText}"`);
+        } catch {
+             console.warn(`- Verification FAILED. Could not get current display text using selector: ${displaySelector}`);
         }
-    }
-    // Dispose trigger handle only after we're sure it's expanded
-    await triggerHandle.dispose(); triggerHandle = null;
-
-
-    // --- Step 2: Wait for Dropdown List AND Options to Appear ---
-    console.log(` - Waiting for dropdown list container AND first option: ${anyDropdownOptionSelector}`);
-    try {
-        await ctx.waitForSelector(anyDropdownOptionSelector, { visible: true, timeout: shortTimeoutMs });
-        console.log(`   - Dropdown list with options appeared.`);
-    } catch(listError) {
-        console.warn(`   - Dropdown list/options did not appear quickly using selector ${anyDropdownOptionSelector}. Proceeding to wait for specific option.`);
-    }
-
-
-    // --- Step 3: Find and Click the Desired Option (with Retry and JS Click Fallback) ---
-    console.log(` - Waiting for specific option: ${specificDropdownOptionSelector}`);
-    let optionClicked = false;
-    const maxRetries = 3; // Increased retries
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        console.log(`   - Attempt ${attempt}/${maxRetries}:`);
-        try {
-            // Prioritize finding the option within the list selector first
-            let currentOptionSelector = specificOptionInListSelector;
-            console.log(`     - Waiting for selector: ${currentOptionSelector}`);
-            optionHandle = await ctx.waitForSelector(currentOptionSelector, { visible: true, timeout: overallTimeoutMs / maxRetries });
-
-        } catch (errInList) {
-             console.warn(`     - Option not found within list selector (${specificOptionInListSelector}). Trying global selector: ${specificDropdownOptionSelector}`);
-             try {
-                 // Fallback: Try finding the option without the list prefix
-                 let currentOptionSelector = specificDropdownOptionSelector;
-                 console.log(`     - Waiting for selector: ${currentOptionSelector}`);
-                 optionHandle = await ctx.waitForSelector(currentOptionSelector, { visible: true, timeout: overallTimeoutMs / maxRetries });
-             } catch (errGlobal) {
-                  console.error(`     - Option not found with either selector on attempt ${attempt}.`);
-                  if (attempt === maxRetries) throw errGlobal; // Throw error on last attempt
-                  await ctx.waitForTimeout(300); // Wait longer before retry
-                  continue; // Go to next attempt
-             }
-        }
-
-        // If we have a handle, try to click it
-        if (optionHandle) {
-            try {
-                console.log(`     - Scrolling option into view.`);
-                await optionHandle.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest' }));
-                await ctx.waitForTimeout(200); // Increased pause after scroll
-
-                console.log(`     - Attempting Puppeteer click...`);
-                await optionHandle.click(); // Try standard click first
-                optionClicked = true;
-                console.log(`     - Puppeteer click successful on attempt ${attempt}.`);
-
-            } catch (clickError) {
-                console.warn(`     - Puppeteer click failed on attempt ${attempt}: ${clickError.message}`);
-                console.log(`     - Attempting JavaScript click fallback...`);
-                try {
-                    // JS Click Fallback needs the specific selector string again
-                    let selectorForEval = optionHandle.toString().includes(dropdownListSelector) ? specificOptionInListSelector : specificDropdownOptionSelector; // Determine which selector found it
-                    await ctx.evaluate((selector) => {
-                        const element = document.querySelector(selector);
-                        if (element instanceof HTMLElement) {
-                             // Optional: Add some logging within evaluate for debugging
-                             // console.log('Attempting JS click on:', element);
-                             element.click();
-                        } else {
-                             console.error('Element not found or not HTMLElement for JS click:', selector);
-                             throw new Error(`Element not found or not HTMLElement for JS click: ${selector}`);
-                        }
-                    }, selectorForEval); // Pass the selector string correctly
-                    optionClicked = true;
-                    console.log(`     - JavaScript click successful on attempt ${attempt}.`);
-                } catch (jsClickError) {
-                    console.error(`     - JavaScript click also failed: ${jsClickError.message}`);
-                     if (attempt === maxRetries) throw jsClickError; // Throw if all fails on last attempt
-                }
-            } finally {
-                 if (optionHandle) {
-                     await optionHandle.dispose(); optionHandle = null; // Dispose handle after attempt
-                 }
-            }
-        } // end if(optionHandle)
-
-        if (optionClicked) {
-            break; // Exit retry loop on success
-        }
-
-        if (attempt < maxRetries) {
-             await ctx.waitForTimeout(300); // Wait longer before next retry
-        }
-
-    } // end retry loop
-
-    if (!optionClicked) {
-        throw new Error(`Failed to click option "${regionValue}" after all attempts.`);
-    }
-
-    console.log(`✅ Successfully selected region: ${regionValue}`);
-
-  } catch (err) {
-    console.error(`❌ Failed to select region "${regionValue}": ${err.message}`);
-    const screenshotPath = `error_select_region_${regionValue}_${Date.now()}.png`;
-    try {
-         await ctx.screenshot({ path: screenshotPath, fullPage: true });
-         console.error(`📸 Screenshot saved to: ${screenshotPath}`);
-    } catch (ssError) {
-         console.error(`   - Failed to take screenshot: ${ssError.message}`);
-    }
-    // Clean up any lingering handles
-    if (triggerHandle) await triggerHandle.dispose();
-    if (optionHandle) await optionHandle.dispose();
-    throw err; // Re-throw the error
-  }
+       return false;
+   }
 }
 
 
+async function selectRegion(page, regionValue, timeoutMs = 30000) {
+  console.log(`Attempting to select region: ${regionValue}`);
 
+  // --- Selectors ---
+  const dropdownTriggerSelector = 'div[data-field-type="115"] div[role="combobox"]';
+  // Selector for the outer DIV container of the list using data-idom-key
+  const listOuterContainerSelector = `div[jsname="xl07Ob"][data-idom-key*="${regionValue}"]`;
+  // Selector for the UL list *inside* that container (verify role, aria-label if possible)
+  const listSelectorInContainer = `${listOuterContainerSelector} ul[role="listbox"]`;
+  // Selector for the specific option LI *inside* that list
+  const targetOptionSelectorInList = `${listSelectorInContainer} li[role="option"][data-value="${regionValue}"]`;
+  // Selector for the displayed value span (for verification)
+  const displayedValueSelector = `${dropdownTriggerSelector} span[jsname="Fb0Bif"]`; // Verify jsname
+  // ---
+
+  try {
+    // --- Operating on main page context ---
+    console.log('Operating on main page context (no iframe handling).');
+
+    // 1. Click the dropdown trigger
+    console.log(`Waiting for dropdown trigger: ${dropdownTriggerSelector}`);
+    await page.waitForSelector(dropdownTriggerSelector, { visible: true, timeout: timeoutMs });
+    console.log('Dropdown trigger found. Clicking...');
+    await page.click(dropdownTriggerSelector);
+    console.log('Dropdown trigger clicked.');
+
+    // 2. Wait for the outer list container (using data-idom-key) to appear
+    console.log(`Waiting for dropdown container to appear: ${listOuterContainerSelector}`);
+    await page.waitForSelector(listOuterContainerSelector, { visible: true, timeout: timeoutMs });
+    console.log(`Dropdown container found: ${listOuterContainerSelector}`);
+
+    // 3. Wait for the UL list inside the container to be ready (optional but safer)
+    //    If this step fails, the list structure inside the container is different than expected.
+    console.log(`Waiting for list inside container: ${listSelectorInContainer}`);
+    await page.waitForSelector(listSelectorInContainer, { visible: true, timeout: 5000 }); // Shorter timeout ok?
+    console.log(`List inside container found: ${listSelectorInContainer}`);
+
+    // 4. Use page.evaluate to find and click the specific option by data-value
+    console.log(`Attempting to find and click option with data-value="${regionValue}" via page.evaluate...`);
+    const clicked = await page.evaluate((listSel, optionVal) => {
+        const listElement = document.querySelector(listSel);
+        if (!listElement) return { success: false, error: `List element not found: ${listSel}` };
+
+        const optionElement = listElement.querySelector(`li[role="option"][data-value="${optionVal}"]`);
+        if (!optionElement) {
+            console.error(`[Browser Context] Option data-value="${optionVal}" not found in list:`, listSel);
+            console.error('[Browser Context] List HTML snippet:', listElement.innerHTML.substring(0, 800));
+            return { success: false, error: `Option data-value="${optionVal}" not found` };
+        }
+
+        console.log(`[Browser Context] Found option with data-value: ${optionVal}`);
+        optionElement.scrollIntoView({ block: 'center', inline: 'nearest' });
+        if (typeof optionElement.click === 'function') {
+            optionElement.click();
+            return { success: true, text: optionElement.innerText.trim() };
+        } else { return { success: false, error: 'Option found but has no click method' }; }
+
+    }, listSelectorInContainer, regionValue); // Pass the UL selector and the target region value
+
+    if (!clicked || !clicked.success) {
+        throw new Error(`Failed to find or click the region option "${regionValue}" using data-value in page.evaluate. Error: ${clicked?.error || 'Unknown evaluate error'}`);
+    }
+    const optionText = clicked.text;
+    console.log(`Region option "${regionValue}" clicked via page.evaluate. Option text: "${optionText}"`);
+
+
+    // 5. Optional: Wait for the outer list container to disappear
+    await page.waitForSelector(listOuterContainerSelector, { hidden: true, timeout: 5000 });
+    console.log('Dropdown container closed.');
+
+    // 6. Verification: Wait for the displayed text to update
+    await page.waitForFunction(
+        (selector, expectedText) => {
+            const element = document.querySelector(selector);
+            return element && element.textContent.trim() === expectedText;
+        },
+        { timeout: 5000 },
+        displayedValueSelector,
+        optionText
+     );
+    console.log(`Successfully selected region: ${regionValue}. Display updated.`);
+
+  } catch (error) {
+     console.error(`Error during region selection for "${regionValue}" (data-idom-key approach):`);
+      try {
+         await page.screenshot({ path: `error_select_region_${regionValue}_idomkey.png`, fullPage: true });
+         console.log('Saved error screenshot.');
+     } catch (screenshotError) {
+         console.error('Failed to take error screenshot:', screenshotError);
+     }
+     console.error(error);
+     let detail = "Check error details and screenshot.";
+      if (error.message.includes(listOuterContainerSelector)) {
+         detail = `Could not find dropdown container matching '${listOuterContainerSelector}'. Check if data-idom-key attribute/value is correct/stable.`;
+     } else if (error.message.includes(listSelectorInContainer)) {
+         detail = `Found container ('${listOuterContainerSelector}') but failed waiting for list ('${listSelectorInContainer}') inside it. Check the UL structure within the container.`;
+     } else if (error.message.includes("page.evaluate")) {
+        detail = `Could not find/click option via evaluate. Verify option data-value ('${regionValue}') exists & is correct within the list ('${listSelectorInContainer}').`;
+     }
+     throw new Error(`Failed to select region option "${regionValue}". ${detail}`);
+  }
+}
 //33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333//
+
 
 
 async function selectCommittedUseDiscountOption(page, option) {

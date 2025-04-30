@@ -221,8 +221,9 @@ async function sendToComputeContainer(mode, payload) {
         resultObj['ondemand_url'] = ondemand?.url || null;
         resultObj['ondemand_machineType'] = ondemand?.machineType || null;
         resultObj['ondemand_specs'] = ondemand?.specs || null;
-    
+      
         if (series === 'C2D') {
+          // Copy ondemand to all others
           ['sud', '1year', '3year'].forEach(mode => {
             resultObj[`${mode}_price`] = ondemand?.price || null;
             resultObj[`${mode}_url`] = ondemand?.url || null;
@@ -230,27 +231,21 @@ async function sendToComputeContainer(mode, payload) {
             resultObj[`${mode}_specs`] = ondemand?.specs || null;
           });
         } else {
+          // Compute sud, copy its result to 1year and 3year
           const sud = await sendToComputeContainer('sud', { ...rowWithMeta, mode: 'sud' });
           resultObj['sud_price'] = sud?.price || null;
           resultObj['sud_url'] = sud?.url || null;
           resultObj['sud_machineType'] = sud?.machineType || null;
           resultObj['sud_specs'] = sud?.specs || null;
-    
-          const [year1, year3] = await Promise.all([
-            sendToComputeContainer('1year', { ...rowWithMeta, mode: '1year' }),
-            sendToComputeContainer('3year', { ...rowWithMeta, mode: '3year' }),
-          ]);
-          resultObj['1year_price'] = year1?.price || null;
-          resultObj['1year_url'] = year1?.url || null;
-          resultObj['1year_machineType'] = year1?.machineType || null;
-          resultObj['1year_specs'] = year1?.specs || null;
-    
-          resultObj['3year_price'] = year3?.price || null;
-          resultObj['3year_url'] = year3?.url || null;
-          resultObj['3year_machineType'] = year3?.machineType || null;
-          resultObj['3year_specs'] = year3?.specs || null;
+      
+          // Copy sud's result to 1year and 3year
+          ['1year', '3year'].forEach(mode => {
+            resultObj[`${mode}_price`] = sud?.price || null;
+            resultObj[`${mode}_url`] = sud?.url || null;
+            resultObj[`${mode}_machineType`] = sud?.machineType || null;
+            resultObj[`${mode}_specs`] = sud?.specs || null;
+          });
         }
-    
       } else if (series === 'E2' || series === 'C2D') {
         // REGULAR or others with E2 or C2D
         const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });

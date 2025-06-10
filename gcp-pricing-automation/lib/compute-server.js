@@ -151,60 +151,125 @@ async function configureAdvancedSettings(page)
   }
 }
 
-  async function setUsageTimeOption(page, hours_per_day) {
-      console.log(`⏲️ Setting Usage Time Option based on hours per day: ${hours_per_day}`);
+async function setUsageTimeOption(page, hours_per_day) {
+  console.log(`⏲️ Setting Usage Time Option based on hours per day: ${hours_per_day}`);
 
-      if (hours_per_day > 0 && hours_per_day < 5) {
-          const toggleSelector = 'button[role="switch"][aria-labelledby="ucc-4"]';
+  if (hours_per_day > 0 && hours_per_day < 5) {
+      const toggleSelector = 'button[role="switch"][aria-labelledby="ucc-4"]';
 
-          await page.waitForSelector(toggleSelector, { visible: true });
+      await page.waitForSelector(toggleSelector, { visible: true });
 
-          const isChecked = await page.$eval(toggleSelector, btn => btn.getAttribute('aria-checked') === 'true');
+      const isChecked = await page.$eval(toggleSelector, btn => btn.getAttribute('aria-checked') === 'true');
 
-          if (!isChecked) {
-              await page.click(toggleSelector);
-              console.log('✅ Usage Time Option toggled ON.');
-          } else {
-              console.log('ℹ️ Usage Time Option already ON.');
-          }
+      if (!isChecked) {
+          await page.click(toggleSelector);
+          console.log('✅ Usage Time Option toggled ON.');
       } else {
-          console.log('ℹ️ Skipping toggle — hours not in range.');
+          console.log('ℹ️ Usage Time Option already ON.');
       }
+  } else {
+      console.log('ℹ️ Skipping toggle — hours not in range.');
   }
-
-
-
-
-async function setNumberOfInstances(page, no_of_instance) {
-  console.log(`🔢 Setting Number of Instances to: ${no_of_instance}`);
-
-  const inputSelector = 'input[jsname="YPqjbf"][aria-labelledby="ucc-5"]';
-
-  await page.waitForSelector(inputSelector, { visible: true });
-
-  await page.click(inputSelector, { clickCount: 3 }); // select existing value
-  await page.keyboard.type(String(no_of_instance));            // type new value
-
-  console.log(`✅ Number of Instances set to ${no_of_instance}`);
 }
+
+
+
+
+
+
+
+  async function setNumberOfInstances(page, no_of_instance) {
+    const targetValue = no_of_instance.toString();
+    // This selector is derived from the HTML you provided:
+    // - input tag
+    // - aria-labelledby="ucc-6" (which is the id of the "Number of instances*" label div)
+    const instancesInputSelector = 'input[aria-labelledby="ucc-6"]';
+    // As an alternative, if jsname is reliably unique for this input:
+    // const instancesInputSelector = 'input[jsname="YPqjbf"]';
+
+    try {
+        console.log(`Attempting to set Number of Instances to: ${targetValue}`);
+
+        // 1. Wait for the input field to be visible and enabled
+        await page.waitForSelector(instancesInputSelector, { visible: true, timeout: 15000 });
+        console.log("Number of Instances input field found and visible.");
+
+        // 2. Focus the input field
+        await page.focus(instancesInputSelector);
+        console.log("Focused on Number of Instances input field.");
+
+        // 3. Clear the existing value
+        // Triple click to select all content in the input field
+        await page.click(instancesInputSelector, { clickCount: 3 });
+        // Press Backspace to delete the selected content
+        await page.keyboard.press('Backspace');
+        console.log("Cleared existing value from Number of Instances input field.");
+
+        // 4. Type the new value
+        await page.type(instancesInputSelector, targetValue, { delay: 50 }); // Adding a small delay can sometimes improve reliability
+        console.log(`Typed "${targetValue}" into the Number of Instances input field.`);
+        
+        // It's often good practice to blur the field or press Enter if the UI reacts to these events
+        // await page.keyboard.press('Enter'); // or await page.blur(instancesInputSelector);
+
+        // 5. Verification (highly recommended)
+        // Wait a brief moment for any potential debounce or UI update after typing
+        //await page.waitForTimeout(200); // Adjust if needed
+
+        const inputValue = await page.evaluate(selector => {
+            const el = document.querySelector(selector);
+            return el ? el.value : null;
+        }, instancesInputSelector);
+
+        if (inputValue === targetValue) {
+            console.log(`✅ Number of Instances successfully set to: ${inputValue}`);
+        } else {
+            console.error(`❌ Verification failed. Expected: "${targetValue}", Actual: "${inputValue}"`);
+            // You might want to throw an error here if strict verification is needed
+            // throw new Error(`Failed to set Number of Instances. Expected: "${targetValue}", Actual: "${inputValue}"`);
+        }
+
+    } catch (error) {
+        console.error(`Error in setNumberOfInstances for value "${targetValue}":`, error);
+        // Re-throw the error if you want the calling function to handle it
+        throw error;
+    }
+}
+
 
 async function setTotalInstanceUsageTime(page, hours) {
-  console.log(`⏱ Evaluating Total Instance Usage Time: ${hours} hours`);
+  const targetValue = String(hours);
+  console.log(`⏱️ Setting Usage Hours to: ${targetValue}`);
 
-  if (Number(hours) === 730) {
-      console.log('ℹ️ Usage Time is default (730 hours) — skipping input.');
-      return;
+  try {
+    // --- THE FINAL, DIRECT SELECTOR ---
+    // This simple CSS selector finds the container div with the unique jsname="bAfJX"
+    // and then finds the input inside it. This bypasses all label-finding issues.
+    const directSelector = 'div[jsname="bAfJX"] input';
+    console.log(`Using final, direct selector: "${directSelector}"`);
+
+    const hoursInput = await page.waitForSelector(directSelector, { visible: true, timeout: 15000 });
+    
+    // This interaction logic is the most reliable.
+    await hoursInput.evaluate(el => el.value = ''); // Clear the field
+    await hoursInput.type(targetValue);             // Type the new value
+
+    // Final verification to be certain.
+    const finalValue = await hoursInput.evaluate(el => el.value);
+    if (finalValue === targetValue) {
+        console.log(`✅ Successfully set Usage Hours to: ${finalValue}`);
+    } else {
+        throw new Error(`Verification failed! Expected "${targetValue}" but the final value was "${finalValue}".`);
+    }
+
+  } catch (error) {
+    console.error('❌ FATAL ERROR in setUsageHours:');
+    console.error(error.message); // This will provide detailed error info.
+    throw error;
   }
-
-  const inputSelector = 'input[jsname="YPqjbf"][aria-labelledby="ucc-8"]';
-
-  //await page.waitForSelector(inputSelector, { visible: true });
-
-  await page.click(inputSelector, { clickCount: 3 }); // clear the input
-  await page.keyboard.type(String(hours));
-
-  console.log(`✅ Total Instance Usage Time set to ${hours} hours`);
 }
+
+
 
 async function selectOperatingSystem(page, osText) {
   console.log(`💻 Selecting Operating System: "${osText}"`);
@@ -274,95 +339,134 @@ async function selectProvisioningModel(page, model) {
 }
 
 
-async function selectMachineFamily(page, label ) {
-  // Step 1: Force click dropdown by visible text
-  console.log(`🔍 Selecting Machine Family: "${label}"`);
-  const success = await page.evaluate((labelText) => {
-    const dropdowns = Array.from(document.querySelectorAll('[role="combobox"]'));
-    for (const dropdown of dropdowns) {
-      if (dropdown.innerText.includes("Machine Family")) {
-        dropdown.click(); // open the dropdown
-        return true;
-      }
-    }
-    return false;
-  }, label);
 
-  if (!success) throw new Error("❌ Machine Family dropdown trigger not found.");
+async function selectMachineFamily(page, optionLabel) {
+  const dropdownLabel = 'Machine Family';
+  // This is the corrected way to create a delay in modern Puppeteer.
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // Step 2: Retry-wait for options to render
-  const maxTries = 10;
-  let found = false;
-  for (let i = 0; i < maxTries; i++) {
-    found = await page.evaluate(() => {
-      return document.querySelectorAll('ul[role="listbox"] li[role="option"]').length > 0;
-    });
-    if (found) break;
-    await page.waitForTimeout(500); // wait before retrying
+  console.log(`⚙️ Starting selection: Dropdown "${dropdownLabel}" -> Option "${optionLabel}"`);
+
+  // --- Step 1: Find and Click the Dropdown Trigger ---
+  const triggerSelector = `aria/${dropdownLabel}[role="combobox"]`;
+  try {
+    console.log(`-  Trying to click dropdown trigger: "${dropdownLabel}"`);
+    await page.waitForSelector(triggerSelector, { visible: true, timeout: 10000 });
+    await page.click(triggerSelector);
+  } catch (error) {
+    console.error(`❌ Could not find or click the dropdown trigger for "${dropdownLabel}".`);
+    await page.screenshot({ path: `error_trigger_${dropdownLabel}.png` });
+    throw error;
   }
-  if (!found) throw new Error("❌ Dropdown options never appeared even after retries.");
 
-  // Step 3: Pick the correct option
-  const clicked = await page.evaluate((labelText) => {
-    const options = document.querySelectorAll('ul[role="listbox"] li[role="option"]');
-    for (const opt of options) {
-      const span = opt.querySelector("span[jsname='K4r5Ff']");
-      if (span && span.innerText.trim().toLowerCase() === labelText.toLowerCase()) {
-        span.click(); // click the option
-        return true;
-      }
+  // --- Step 2: Wait for the Listbox to Appear (CORRECTED & ENHANCED) ---
+  console.log('✅ Trigger clicked. Waiting for listbox to appear...');
+  const listboxSelector = `ul[role="listbox"][aria-label="${dropdownLabel}"]`;
+  try {
+    // Using the corrected wait function.
+    await wait(500);
+    await page.waitForSelector(listboxSelector, { visible: true, timeout: 15000 });
+    console.log(`-  Listbox for "${dropdownLabel}" is now visible.`);
+  } catch (e) {
+    console.error(`❌ CRITICAL ERROR: The dropdown listbox for "${dropdownLabel}" did not appear after clicking the trigger.`);
+    await page.screenshot({ path: `error_listbox_not_found_${dropdownLabel}.png` });
+    console.log(`-  Screenshot saved to 'error_listbox_not_found_${dropdownLabel}.png'. Review it carefully.`);
+    // Re-throwing the original error after logging and screenshotting.
+    throw e;
+  }
+
+  // --- Step 3: Click the Desired Option with Fallbacks ---
+  const dataValue = optionLabel.toLowerCase().replace(/ /g, '-');
+  const optionStrategies = [
+    { type: 'ARIA Selector', value: `aria/${optionLabel}[role="option"]` },
+    { type: 'Data-Value Selector', value: `${listboxSelector} li[role="option"][data-value="${dataValue}"]` }
+  ];
+
+  let optionClicked = false;
+  for (const strategy of optionStrategies) {
+    try {
+      console.log(`-  Trying option strategy: "${strategy.type}"`);
+      await page.click(strategy.value, { timeout: 5000 });
+      optionClicked = true;
+      console.log(`-  Success using "${strategy.type}"`);
+      break;
+    } catch (error) {
+      console.log(`-  Strategy "${strategy.type}" failed. Trying next...`);
     }
-    return false;
-  }, label);
+  }
 
-  if (!clicked) throw new Error(`❌ Option "${label}" not found in dropdown.`);
+  if (!optionClicked) {
+    await page.screenshot({ path: `error_option_not_clicked_${optionLabel}.png` });
+    throw new Error(`❌ All strategies failed to click the option "${optionLabel}".`);
+  }
+
+  console.log(`👍 Successfully selected "${dropdownLabel}" -> "${optionLabel}".`);
 }
 
 
 
 
-async function selectSeries(page, value ) {
-  // Step 1: Open the dropdown (by checking visible text "Series")
-  const clicked = await page.evaluate(() => {
-    const dropdowns = Array.from(document.querySelectorAll('[role="combobox"]'));
-    for (const dropdown of dropdowns) {
-      if (dropdown.innerText.includes("Series")) {
-        dropdown.click();
-        return true;
-      }
-    }
-    return false;
-  });
+async function selectSeries(page, seriesLabel) {
+  const dropdownLabel = 'Series';
+  // This is the corrected way to create a delay in modern Puppeteer.
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  if (!clicked) throw new Error("❌ Series dropdown not found.");
+  console.log(`⚙️ Starting selection: Dropdown "${dropdownLabel}" -> Option "${seriesLabel}"`);
 
-  // Step 2: Retry until options appear
-  const maxTries = 10;
-  let optionsVisible = false;
-  for (let i = 0; i < maxTries; i++) {
-    optionsVisible = await page.evaluate(() => {
-      return document.querySelectorAll('ul[role="listbox"] li[role="option"]').length > 0;
-    });
-    if (optionsVisible) break;
-    await page.waitForTimeout(300);
+  // --- Step 1: Find and Click the Dropdown Trigger ---
+  const triggerSelector = `aria/${dropdownLabel}[role="combobox"]`;
+  try {
+    console.log(`-  Trying to click dropdown trigger: "${dropdownLabel}"`);
+    await page.waitForSelector(triggerSelector, { visible: true, timeout: 10000 });
+    await page.click(triggerSelector);
+  } catch (error) {
+    console.error(`❌ Could not find or click the dropdown trigger for "${dropdownLabel}".`);
+    await page.screenshot({ path: `error_trigger_${dropdownLabel}.png` });
+    throw error;
   }
 
-  if (!optionsVisible) throw new Error("❌ Series options did not appear.");
+  // --- Step 2: Wait for the Listbox to Appear ---
+  console.log('✅ Trigger clicked. Waiting for listbox to appear...');
+  const listboxSelector = `ul[role="listbox"][aria-label="${dropdownLabel}"]`;
+  try {
+    await wait(500); // Give animations/network a moment to start.
+    await page.waitForSelector(listboxSelector, { visible: true, timeout: 15000 });
+    console.log(`-  Listbox for "${dropdownLabel}" is now visible.`);
+  } catch (e) {
+    console.error(`❌ CRITICAL ERROR: The dropdown listbox for "${dropdownLabel}" did not appear.`);
+    await page.screenshot({ path: `error_listbox_not_found_${dropdownLabel}.png` });
+    console.log(`-  Screenshot saved to 'error_listbox_not_found_${dropdownLabel}.png'.`);
+    throw e;
+  }
 
-  // Step 3: Click the correct option (like N2, E2, etc.)
-  const matched = await page.evaluate((value) => {
-    const options = document.querySelectorAll('ul[role="listbox"] li[role="option"]');
-    for (const option of options) {
-      const label = option.querySelector('span[jsname="K4r5Ff"]');
-      if (label && label.innerText.trim().toLowerCase() === value.toLowerCase()) {
-        label.click();
-        return true;
-      }
+  // --- Step 3: Click the Desired Option with Fallbacks ---
+  const dataValue = seriesLabel.toLowerCase(); // e.g., "A2" -> "a2"
+  const optionStrategies = [
+    // Primary Strategy: Most reliable as it finds by visible name.
+    { type: 'ARIA Selector', value: `aria/${seriesLabel}[role="option"]` },
+    // Fallback Strategy: Also excellent, uses the stable `data-value`.
+    { type: 'Data-Value Selector', value: `${listboxSelector} li[role="option"][data-value="${dataValue}"]` }
+  ];
+
+  let optionClicked = false;
+  for (const strategy of optionStrategies) {
+    try {
+      console.log(`-  Trying option strategy: "${strategy.type}"`);
+      await page.click(strategy.value, { timeout: 5000 });
+      optionClicked = true;
+      console.log(`-  Success using "${strategy.type}"`);
+      break;
+    } catch (error) {
+      console.log(`-  Strategy "${strategy.type}" failed. Trying next...`);
     }
-    return false;
-  }, value);
+  }
 
-  if (!matched) throw new Error(`❌ Option "${value}" not found in Series dropdown.`);
+  if (!optionClicked) {
+    await page.screenshot({ path: `error_option_not_clicked_${seriesLabel}.png` });
+    throw new Error(`❌ All strategies failed to click the option "${seriesLabel}".`);
+  }
+
+  console.log(`👍 Successfully selected "${dropdownLabel}" -> "${seriesLabel}".`);
 }
 
 
@@ -372,48 +476,87 @@ async function selectSeries(page, value ) {
 
 
 
+async function selectMachineType(page, machineTypeLabel) {
+  const dropdownLabel = 'Machine type';
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function selectMachineType(page, value ) {
-  const triggered = await page.evaluate(() => {
-    const allCombos = [...document.querySelectorAll('[role="combobox"]')];
-    for (const combo of allCombos) {
-      if (combo.innerText.includes("Machine type")) {
-        combo.click();
-        return true;
-      }
-    }
-    return false;
-  });
-  if (!triggered) throw new Error("❌ Could not find Machine type dropdown");
+  console.log(`⚙️ Starting selection: Dropdown "${dropdownLabel}" -> Option "${machineTypeLabel}"`);
 
-  // Step 2: Retry until options appear
-  let found = false;
-  for (let i = 0; i < 10; i++) {
-    found = await page.evaluate(() =>
-      document.querySelectorAll('ul[role="listbox"] li[role="option"]').length > 0
-    );
-    if (found) break;
-    await page.waitForTimeout(300);
+  // --- Step 1: Click the Dropdown Trigger ---
+  const triggerSelector = `aria/${dropdownLabel}[role="combobox"]`;
+  try {
+    console.log(`-  Trying to click dropdown trigger: "${dropdownLabel}"`);
+    await page.waitForSelector(triggerSelector, { visible: true, timeout: 10000 });
+    await page.click(triggerSelector);
+  } catch (error) {
+    await page.screenshot({ path: `error_trigger_${dropdownLabel}.png` });
+    console.error(`❌ Could not find or click the dropdown trigger. Screenshot saved.`);
+    throw error;
   }
-  if (!found) throw new Error("❌ Machine type options not loaded");
 
-  // Step 3: Click the correct machine type option by full name
-  const clicked = await page.evaluate((value) => {
-    const options = document.querySelectorAll('ul[role="listbox"] li[role="option"]');
-    for (const option of options) {
-      const text = option.querySelector('span[jsname="K4r5Ff"]');
-      if (text && text.innerText.trim().toLowerCase() === value.toLowerCase()) {
-        text.click();
-        return true;
+  // --- Step 2: Wait for the Listbox to Appear ---
+  console.log('✅ Trigger clicked. Waiting for listbox to appear...');
+  const listboxSelector = `ul[role="listbox"][aria-label="${dropdownLabel}"]`;
+  try {
+    await wait(500);
+    await page.waitForSelector(listboxSelector, { visible: true, timeout: 15000 });
+    console.log(`-  Listbox for "${dropdownLabel}" is now visible.`);
+  } catch (e) {
+    await page.screenshot({ path: `error_listbox_not_found_${dropdownLabel}.png` });
+    console.error(`❌ Listbox did not appear. Screenshot saved.`);
+    throw e;
+  }
+
+  // --- Step 3: Scroll the Target Option Into View (THE KEY FIX) ---
+  const dataValue = machineTypeLabel;
+  const optionSelectorForScroll = `${listboxSelector} li[role="option"][data-value="${dataValue}"]`;
+  try {
+    console.log(`-  Scrolling option "${machineTypeLabel}" into view...`);
+    await page.evaluate((selector) => {
+      const element = document.querySelector(selector);
+      if (element) {
+        element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+      } else {
+        // This throw will be caught by the catch block in the Node.js context
+        throw new Error(`Scroll failed: Element with selector '${selector}' not found in the DOM.`);
       }
+    }, optionSelectorForScroll);
+    await wait(500); // Wait for the scroll to complete and for any potential DOM updates.
+    console.log(`-  Scroll successful.`);
+  } catch (error) {
+    await page.screenshot({ path: `error_option_not_scrolled_${machineTypeLabel}.png` });
+    console.error(`❌ Failed to scroll option into view. Screenshot saved.`);
+    throw error;
+  }
+
+
+  // --- Step 4: Click the Now-Visible Option ---
+  const optionStrategies = [
+    { type: 'ARIA Selector', value: `aria/${machineTypeLabel}[role="option"]` },
+    { type: 'Data-Value Selector', value: optionSelectorForScroll }
+  ];
+
+  let optionClicked = false;
+  for (const strategy of optionStrategies) {
+    try {
+      console.log(`-  Trying to click with strategy: "${strategy.type}"`);
+      // Now that it's scrolled into view, this click is much more likely to succeed.
+      await page.click(strategy.value, { timeout: 5000 });
+      optionClicked = true;
+      console.log(`-  Success using "${strategy.type}"`);
+      break;
+    } catch (error) {
+      console.log(`-  Strategy "${strategy.type}" failed. Trying next...`);
     }
-    return false;
-  }, value);
+  }
 
-  if (!clicked) throw new Error(`❌ Machine type "${value}" not found in dropdown`);
+  if (!optionClicked) {
+    await page.screenshot({ path: `error_option_not_clicked_${machineTypeLabel}.png` });
+    throw new Error(`❌ All strategies failed to click the option "${machineTypeLabel}" even after scrolling.`);
+  }
+
+  console.log(`👍 Successfully selected "${dropdownLabel}" -> "${machineTypeLabel}".`);
 }
-
-
 
 
 
@@ -960,7 +1103,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       console.log(`\n🎯 Starting automation for row ${sl}...`);
       
       browser = await puppeteer.launch({
-        headless: true,
+        headless: false,
         args: ['--no-sandbox']
       });
       
@@ -1008,7 +1151,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       }
       await sleep(2000) 
     
-      await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
+      //await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
       
       
       if (row["mode"]==="sud"){

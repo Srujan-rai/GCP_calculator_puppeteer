@@ -482,134 +482,148 @@ async function selectMachineType(page, machineTypeLabel) {
 
   console.log(`⚙️ Starting selection: Dropdown "${dropdownLabel}" -> Option "${machineTypeLabel}"`);
 
-  // --- Step 1: Click the Dropdown Trigger ---
+  // --- Step 1 & 2: Open Dropdown & Wait for Listbox (Unchanged) ---
   const triggerSelector = `aria/${dropdownLabel}[role="combobox"]`;
-  try {
-    console.log(`-  Trying to click dropdown trigger: "${dropdownLabel}"`);
-    await page.waitForSelector(triggerSelector, { visible: true, timeout: 10000 });
-    await page.click(triggerSelector);
-  } catch (error) {
-    await page.screenshot({ path: `error_trigger_${dropdownLabel}.png` });
-    console.error(`❌ Could not find or click the dropdown trigger. Screenshot saved.`);
-    throw error;
-  }
-
-  // --- Step 2: Wait for the Listbox to Appear ---
-  console.log('✅ Trigger clicked. Waiting for listbox to appear...');
   const listboxSelector = `ul[role="listbox"][aria-label="${dropdownLabel}"]`;
   try {
+    await page.waitForSelector(triggerSelector, { visible: true, timeout: 10000 });
+    await page.click(triggerSelector);
     await wait(500);
     await page.waitForSelector(listboxSelector, { visible: true, timeout: 15000 });
     console.log(`-  Listbox for "${dropdownLabel}" is now visible.`);
-  } catch (e) {
-    await page.screenshot({ path: `error_listbox_not_found_${dropdownLabel}.png` });
-    console.error(`❌ Listbox did not appear. Screenshot saved.`);
-    throw e;
-  }
-
-  // --- Step 3: Scroll the Target Option Into View (THE KEY FIX) ---
-  const dataValue = machineTypeLabel;
-  const optionSelectorForScroll = `${listboxSelector} li[role="option"][data-value="${dataValue}"]`;
-  try {
-    console.log(`-  Scrolling option "${machineTypeLabel}" into view...`);
-    await page.evaluate((selector) => {
-      const element = document.querySelector(selector);
-      if (element) {
-        element.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
-      } else {
-        // This throw will be caught by the catch block in the Node.js context
-        throw new Error(`Scroll failed: Element with selector '${selector}' not found in the DOM.`);
-      }
-    }, optionSelectorForScroll);
-    await wait(500); // Wait for the scroll to complete and for any potential DOM updates.
-    console.log(`-  Scroll successful.`);
   } catch (error) {
-    await page.screenshot({ path: `error_option_not_scrolled_${machineTypeLabel}.png` });
-    console.error(`❌ Failed to scroll option into view. Screenshot saved.`);
+    await page.screenshot({ path: `error_during_open_${dropdownLabel}.png` });
+    console.error(`❌ Failed to open dropdown or find listbox for "${dropdownLabel}". Screenshot saved.`);
     throw error;
   }
 
+  // --- Step 3: Find and Click the Option ---
 
-  // --- Step 4: Click the Now-Visible Option ---
-  const optionStrategies = [
-    { type: 'ARIA Selector', value: `aria/${machineTypeLabel}[role="option"]` },
-    { type: 'Data-Value Selector', value: optionSelectorForScroll }
-  ];
-
-  let optionClicked = false;
-  for (const strategy of optionStrategies) {
+  // --- Corrected, direct path for "Custom machine type" ---
+  if (machineTypeLabel === 'Custom machine type') {
+    console.log(`-  Entering corrected, direct path for "${machineTypeLabel}"...`);
+    // THE KEY FIX: Using the correct data-value from the HTML dump.
+    const customOptionSelector = `${listboxSelector} li[role="option"][data-value="custom"]`;
     try {
-      console.log(`-  Trying to click with strategy: "${strategy.type}"`);
-      // Now that it's scrolled into view, this click is much more likely to succeed.
-      await page.click(strategy.value, { timeout: 5000 });
-      optionClicked = true;
-      console.log(`-  Success using "${strategy.type}"`);
-      break;
-    } catch (error) {
-      console.log(`-  Strategy "${strategy.type}" failed. Trying next...`);
+      console.log(`-  Waiting for selector: ${customOptionSelector}`);
+      await page.waitForSelector(customOptionSelector, { visible: true, timeout: 5000 });
+      await page.click(customOptionSelector);
+    } catch(e) {
+      await page.screenshot({ path: `error_custom_final_fail.png` });
+      console.error(`❌ [Custom Path] Failed to click the custom option even with the correct selector. This is unexpected. Screenshot saved.`);
+      throw e;
     }
-  }
+  } else {
+    // --- General bi-directional scroll path for all other machine types ---
+    console.log(`-  Entering general scroll search for "${machineTypeLabel}"...`);
+    const dataValue = machineTypeLabel;
+    const optionSelectorToFind = `li[role="option"][data-value="${dataValue}"]`;
 
-  if (!optionClicked) {
-    await page.screenshot({ path: `error_option_not_clicked_${machineTypeLabel}.png` });
-    throw new Error(`❌ All strategies failed to click the option "${machineTypeLabel}" even after scrolling.`);
-  }
+    const foundAndRevealed = await page.evaluate(async (lboxSelector, optSelector) => {
+      const waitInBrowser = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+      const listbox = document.querySelector(lboxSelector);
+      if (!listbox) return false;
+      
+      // Check current -> scroll down -> scroll up
+      if (listbox.querySelector(optSelector)) { listbox.querySelector(optSelector).scrollIntoView({ block: 'center' }); return true; }
+      for (let i = 0; i < 20; i++) {
+        if ((listbox.scrollTop + listbox.clientHeight) >= listbox.scrollHeight) break;
+        listbox.scrollTop = listbox.scrollHeight;
+        await waitInBrowser(250);
+        if (listbox.querySelector(optSelector)) { listbox.querySelector(optSelector).scrollIntoView({ block: 'center' }); return true; }
+      }
+      listbox.scrollTop = 0;
+      await waitInBrowser(500);
+      if (listbox.querySelector(optSelector)) { listbox.querySelector(optSelector).scrollIntoView({ block: 'center' }); return true; }
+      return false;
+    }, listboxSelector, optionSelectorToFind);
 
-  console.log(`👍 Successfully selected "${dropdownLabel}" -> "${machineTypeLabel}".`);
-}
-
-
-
-
-
-async function setNumberOfvCPUs(page, vCPUs = 2) {
-  const success = await page.evaluate((vCPUs) => {
-    const vcpuBlock = document.querySelector('div[jsname="pYn3de"]');
-    if (!vcpuBlock) return false;
-
-    const numberInput = vcpuBlock.querySelector('input[type="number"]');
-    if (!numberInput) return false;
-
-    numberInput.value = vCPUs.toString();
-    numberInput.dispatchEvent(new Event("input", { bubbles: true }));
-    numberInput.dispatchEvent(new Event("change", { bubbles: true }));
-    return true;
-  }, vCPUs);
-
-  if (!success) throw new Error("❌ Could not locate and set vCPU field anchored to vCPU block.");
-}
-
-
-
-
-
-async function setAmountOfMemory(page, memory = 16) {
-  console.log(`🧠 Setting Amount of Memory to ${memory} GB`);
-
-  const success = await page.evaluate((memory) => {
-    const input = document.querySelector('input[type="number"][aria-labelledby="ucc-41"]');
-    if (!input) return false;
-
-    input.focus();
-
-    // Clear the existing value with backspaces (simulate a user)
-    for (let i = 0; i < 4; i++) {
-      input.dispatchEvent(new KeyboardEvent("keydown", {
-        key: "Backspace", code: "Backspace", bubbles: true
-      }));
+    if (!foundAndRevealed) {
+      await page.screenshot({ path: `error_option_not_revealed_${machineTypeLabel}.png` });
+      throw new Error(`❌ [General Path] Failed to reveal option "${machineTypeLabel}" after full scroll search.`);
     }
 
-    // Set new value
-    input.value = memory.toString();
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
+    console.log(`-  Option "${machineTypeLabel}" revealed. Clicking...`);
+    await wait(500);
+    await page.click(`${listboxSelector} ${optionSelectorToFind}`);
+  }
 
-    return true;
-  }, memory);
-
-  if (!success) throw new Error("❌ Could not find or update Amount of memory field.");
+  console.log(`👍 Successfully selected "${dropdownLabel}" -> "${machineTypeLabel}"!`);
 }
 
+
+
+
+
+async function setNumberOfvCPUs(page, vcpusToSet) {
+  // The visible or accessible label for the input field. This is the most stable selector.
+  const inputLabel = 'Number of vCPUs';
+  const selector = `aria/${inputLabel}`;
+
+  console.log(`⚙️ Setting "${inputLabel}" to: ${vcpusToSet}`);
+
+  try {
+    // 1. Wait for the input field to be visible and ready.
+    await page.waitForSelector(selector, { visible: true, timeout: 10000 });
+    console.log(`-  Found input field for "${inputLabel}".`);
+
+    // 2. Triple-click the input to select all current text.
+    await page.click(selector, { clickCount: 3 });
+    console.log(`-  Selected existing text.`);
+    
+    // 3. Press backspace to delete the selected text.
+    await page.keyboard.press('Backspace');
+    console.log(`-  Cleared the input field.`);
+
+    // 4. Type the new value.
+    await page.type(selector, vcpusToSet.toString());
+    console.log(`-  Typed new value: ${vcpusToSet}`);
+
+  } catch (error) {
+    await page.screenshot({ path: `error_set_vcpus.png` });
+    console.error(`❌ Failed to set "${inputLabel}". Screenshot saved.`);
+    throw error;
+  }
+
+  console.log(`👍 Successfully set "${inputLabel}" to "${vcpusToSet}".`);
+}
+
+
+
+
+async function setAmountOfMemory(page, memoryToSet) {
+  // We find the input by its visible or accessible label, which is stable.
+  // We'll assume the label is "Amount of memory".
+  const inputLabel = 'Amount of memory';
+  const selector = `aria/${inputLabel}`;
+
+  console.log(`🧠 Setting "${inputLabel}" to: ${memoryToSet} GB`);
+
+  try {
+    // 1. Wait for the input field to be visible and ready.
+    await page.waitForSelector(selector, { visible: true, timeout: 10000 });
+    console.log(`-  Found input field for "${inputLabel}".`);
+
+    // 2. Triple-click the input to select all current text. This works regardless of the number's length.
+    await page.click(selector, { clickCount: 3 });
+    console.log(`-  Selected existing text.`);
+    
+    // 3. Press backspace to delete the selected text.
+    await page.keyboard.press('Backspace');
+    console.log(`-  Cleared the input field.`);
+
+    // 4. Type the new value like a user.
+    await page.type(selector, memoryToSet.toString());
+    console.log(`-  Typed new value: ${memoryToSet}`);
+
+  } catch (error) {
+    await page.screenshot({ path: `error_set_memory.png` });
+    console.error(`❌ Failed to set "${inputLabel}". Screenshot saved.`);
+    throw error;
+  }
+
+  console.log(`👍 Successfully set "${inputLabel}" to "${memoryToSet}".`);
+}
 
 
 
@@ -882,139 +896,65 @@ async function selectRegion(page, regionValue, timeoutMs = 30000) {
 
 
 async function selectCommittedUseDiscountOption(page, option) {
+  const dropdownLabel = 'Committed use discount options';
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // --- Mappings (Kept from your original code for a clean API) ---
+  const valueMap = { 'ondemand': 'none', '1year': '1-year', '3year': '3-years' };
+  const labelTextMap = { 'ondemand': 'None', '1year': '1 year', '3year': '3 years' };
   const optionLower = option.toLowerCase();
-
-  // --- Mappings ---
-  // Map readable option to the input's 'value' attribute
-  const valueMap = {
-    'ondemand': 'none',
-    '1year': '1-year',
-    '3year': '3-years',
-  };
-  // Map readable option to the label's visible text
-  const labelTextMap = {
-    'ondemand': 'None',
-    '1year': '1 year', // Ensure this matches EXACTLY (case-sensitive)
-    '3year': '3 years', // Ensure this matches EXACTLY
-  };
-
-  const radioButtonValue = valueMap[optionLower];
+  const dataValue = valueMap[optionLower];
   const labelText = labelTextMap[optionLower];
 
-  if (!radioButtonValue || !labelText) {
-    console.log(`Invalid option provided: ${option}`);
-    throw new Error(`Invalid committed use discount option: ${option}`);
+  if (!dataValue || !labelText) {
+    throw new Error(`Invalid committed use discount option provided: ${option}`);
   }
 
-  // --- Selection Strategies ---
-  // Define selectors for different strategies
-  const primarySelector = `input[type="radio"][value="${radioButtonValue}"] + label`;
-  const labelTextXPath = `//label[normalize-space(.)="${labelText}"]`; // Using XPath for text matching
+  console.log(`⚙️ Selecting "${dropdownLabel}" -> "${labelText}"`);
 
-  // --- Attempt Logic ---
-  let selected = false;
-  const timeoutOptions = { visible: true, timeout: 5000 }; // Shorter timeout for individual attempts
+  // --- Step 1 & 2: Click Trigger and Wait for Listbox ---
+  const triggerSelector = `aria/${dropdownLabel}[role="combobox"]`;
+  const listboxSelector = `ul[role="listbox"][aria-label="${dropdownLabel}"]`;
+  try {
+    await page.waitForSelector(triggerSelector, { visible: true, timeout: 10000 });
+    await page.click(triggerSelector);
+    await wait(500);
+    await page.waitForSelector(listboxSelector, { visible: true, timeout: 15000 });
+    console.log(`-  Listbox for "${dropdownLabel}" is now visible.`);
+  } catch (error) {
+    await page.screenshot({ path: `error_open_${dropdownLabel}.png` });
+    console.error(`❌ Failed to open dropdown for "${dropdownLabel}". Screenshot saved.`);
+    throw error;
+  }
 
-  // Strategy 1: Primary (Input Value + Adjacent Label CSS Selector)
-  if (!selected) {
+  // --- Step 3: Click the Desired Option ---
+  // This dropdown is short, so no complex scrolling is needed. We can use our reliable
+  // multi-strategy click to be extra safe.
+  const optionStrategies = [
+    { type: 'ARIA Selector', value: `aria/${labelText}[role="option"]` },
+    { type: 'Data-Value Selector', value: `${listboxSelector} li[role="option"][data-value="${dataValue}"]` }
+  ];
+
+  let optionClicked = false;
+  for (const strategy of optionStrategies) {
     try {
-      console.log(`Attempt 1: Clicking adjacent label using value: [${primarySelector}]`);
-      await page.waitForSelector(primarySelector, timeoutOptions);
-      await page.click(primarySelector);
-      // Optional: Add a short pause or verification step here if needed
-      // await page.waitForTimeout(100);
-      console.log(`Success (Attempt 1): Clicked adjacent label for value "${radioButtonValue}".`);
-      selected = true;
+      console.log(`-  Trying to click with strategy: "${strategy.type}"`);
+      await page.click(strategy.value, { timeout: 5000 });
+      optionClicked = true;
+      console.log(`-  Success using "${strategy.type}"`);
+      break;
     } catch (error) {
-      console.warn(`Attempt 1 Failed: Could not click adjacent label using value. ${error.message}`);
+      console.log(`-  Strategy "${strategy.type}" failed. Trying next...`);
     }
   }
 
-  // Strategy 2: Fallback 1 (Label Text XPath)
-  if (!selected) {
-    try {
-      console.log(`Attempt 2: Clicking label using text XPath: [${labelTextXPath}]`);
-      // XPath selectors need page.$x() and then operate on the handle
-      const [labelElementHandle] = await page.$x(labelTextXPath);
-      if (!labelElementHandle) {
-          throw new Error(`Label element not found with XPath: ${labelTextXPath}`);
-      }
-      // Ensure element is visible before clicking (waitForXPath might be needed depending on Puppeteer version/setup)
-      // await page.waitForXPath(labelTextXPath, timeoutOptions); // Alternative wait
-      await labelElementHandle.click();
-      // Optional: Dispose handle
-      await labelElementHandle.dispose();
-      console.log(`Success (Attempt 2): Clicked label using text "${labelText}".`);
-      selected = true;
-    } catch (error) {
-      console.warn(`Attempt 2 Failed: Could not click label using text. ${error.message}`);
-    }
+  if (!optionClicked) {
+    await page.screenshot({ path: `error_option_not_clicked_${option}.png` });
+    throw new Error(`❌ All strategies failed to click the option "${labelText}".`);
   }
 
-  // Strategy 3: Fallback 2 (Input Value -> Dynamic ID -> Label For)
-  if (!selected) {
-    try {
-      console.log(`Attempt 3: Finding input by value, getting ID, clicking label by [for]`);
-      const inputSelector = `input[type="radio"][value="${radioButtonValue}"]`;
-      await page.waitForSelector(inputSelector, timeoutOptions);
-
-      // Get the dynamic ID from the input element
-      const dynamicId = await page.$eval(inputSelector, (el) => el.id);
-
-      if (!dynamicId) {
-          throw new Error(`Could not retrieve ID for input with value "${radioButtonValue}"`);
-      }
-
-      const labelForSelector = `label[for="${dynamicId}"]`;
-      console.log(`   - Found dynamic ID: ${dynamicId}. Clicking label: [${labelForSelector}]`);
-      await page.waitForSelector(labelForSelector, timeoutOptions);
-      await page.click(labelForSelector);
-      console.log(`Success (Attempt 3): Clicked label using dynamic ID "${dynamicId}".`);
-      selected = true;
-    } catch (error) {
-      console.warn(`Attempt 3 Failed: Could not click label using dynamic ID. ${error.message}`);
-    }
-  }
-
-  // Strategy 4: Fallback 3 (Intensive JS Click on Primary Selector)
-  // Only try if the primary selector *could* potentially find the element but click failed
-  if (!selected) {
-      try {
-          console.log(`Attempt 4: Trying JS click on primary selector: [${primarySelector}]`);
-          await page.waitForSelector(primarySelector, timeoutOptions); // Ensure element exists first
-          await page.evaluate((selector) => {
-              const element = document.querySelector(selector);
-              if (element instanceof HTMLElement) {
-                  element.click();
-              } else {
-                  throw new Error(`Element not found or not HTMLElement for JS click: ${selector}`);
-              }
-          }, primarySelector);
-          console.log(`Success (Attempt 4): JS click on adjacent label for value "${radioButtonValue}".`);
-          selected = true;
-      } catch (error) {
-          console.warn(`Attempt 4 Failed: JS click on primary selector failed. ${error.message}`);
-      }
-  }
-
-
-  // Final Check
-  if (!selected) {
-    console.error(`All selection attempts failed for option: ${option}`);
-    // Optional: Add more debugging info here (e.g., screenshot, dump HTML)
-    // await page.screenshot({ path: `error_select_${option}.png` });
-    throw new Error(`Failed to select committed use discount option '${option}' after multiple attempts.`);
-  }
-
-  console.log(`Successfully selected option: ${option}`);
+  console.log(`👍 Successfully selected committed use discount: "${labelText}"`);
 }
-
-
-
-
-
-
-
 
 
 //333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333//
@@ -1155,11 +1095,13 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       
       
       if (row["mode"]==="sud"){
-        await toggleSustainedUseDiscount(page);
+        //await toggleSustainedUseDiscount(page);
       }
       
       await sleep(2000);
+      if (row["Datacenter Location"]!== "us-central1") {
       await selectRegion(page,row["Datacenter Location"]);
+      }
       await sleep(1000);
 
       if (row["mode"]!=="sud"){

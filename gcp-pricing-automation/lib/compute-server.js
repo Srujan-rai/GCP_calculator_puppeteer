@@ -723,7 +723,8 @@ async function setAmountOfMemory(page, memoryToSet) {
 async function setBootDiskSize(pageOrFrame, sizeInGB) {
   console.log(`💾 Setting Boot Disk Size to ${sizeInGB} GB`);
 
-  const inputSelector = 'input[type="number"][id="c31"]';
+  const inputSelector = 'input[type="number"][min="0"][max="65536"]';
+
 
   // Wait until the input field is visible and enabled
   await pageOrFrame.waitForSelector(inputSelector, { visible: true, timeout: 10000 });
@@ -743,113 +744,126 @@ async function setBootDiskSize(pageOrFrame, sizeInGB) {
 
 
 async function toggleSustainedUseDiscount(pageOrFrame, options = {}) {
-  // Default options
   const {
-    timeout = 15000, // ms
+    timeout = 15000,
     verify = true,
-    verifyTimeout = 5000 // ms
+    verifyTimeout = 5000
   } = options;
 
-  // Stable selector based on role and aria-label
   const toggleSelector = "button[role='switch'][aria-label='Add sustained use discounts']";
-
   console.log(`Attempting to find and toggle Sustained Use Discount switch...`);
   console.log(` - Selector: ${toggleSelector}`);
   console.log(` - Timeout: ${timeout}ms`);
 
   try {
-    // 1. Wait for the button to exist and be visible in the DOM
-    //    waitForSelector throws an error if not found within the timeout.
+    // 🔍 DEBUG: Print current frame/page URL
+    const url = pageOrFrame.url ? pageOrFrame.url() : '[Unknown Frame/Page URL]';
+    console.log(` - Page or Frame URL: ${url}`);
+
+    // 🔍 DEBUG: See what similar toggle buttons exist
+    const allToggles = await pageOrFrame.$$eval("button[role='switch']", buttons =>
+      buttons.map(b => ({
+        label: b.getAttribute('aria-label'),
+        checked: b.getAttribute('aria-checked'),
+        visible: !!(b.offsetParent !== null)
+      }))
+    );
+    console.log(" - Discovered toggles:", allToggles);
+
+    // 1. Wait for the button to be visible
     const toggleButton = await pageOrFrame.waitForSelector(toggleSelector, {
-      visible: true, // Ensures the element is not hidden (e.g., display: none)
-      timeout: timeout,
+      visible: true,
+      timeout,
     });
 
     if (!toggleButton) {
-        // This check is slightly redundant as waitForSelector should throw, but good for safety.
-        console.error("Error: waitForSelector completed but returned a nullish handle.");
-        return false;
+      console.error("Error: waitForSelector found no matching toggle button.");
+      return false;
     }
-    console.log("Toggle button found.");
+    console.log(" - Toggle button found.");
 
     let initialState = 'unknown';
     if (verify) {
       try {
-        // 2. (Optional) Get the initial state *before* clicking
         initialState = await toggleButton.evaluate(el => el.getAttribute('aria-checked'));
         console.log(` - Initial 'aria-checked' state: ${initialState}`);
       } catch (evalError) {
-        // Log if we can't get the state, but proceed with the click
-        console.warn(` - Warning: Could not read initial aria-checked state: ${evalError.message}`);
+        console.warn(` - Warning: Could not get initial aria-checked state: ${evalError.message}`);
       }
     }
 
-    // 3. Click the button
-    //    Using the element handle's click method is generally reliable.
+    // 2. Click the button
     await toggleButton.click();
-    console.log("Toggle button clicked.");
+    console.log(" - Toggle button clicked.");
 
-    // 4. (Optional) Verify the state changed
+    // 3. Optional verification
     if (verify && initialState !== 'unknown') {
       console.log(" - Verifying state change...");
       try {
-        // Wait using waitForFunction, which polls the browser context.
-        // This waits until the 'aria-checked' attribute is DIFFERENT from the initial state.
         await pageOrFrame.waitForFunction(
-          (selector, expectedInitialState) => {
-            const element = document.querySelector(selector);
-            // Check if element exists and its attribute is different
-            return element && element.getAttribute('aria-checked') !== expectedInitialState;
+          (selector, expected) => {
+            const el = document.querySelector(selector);
+            return el && el.getAttribute('aria-checked') !== expected;
           },
-          { timeout: verifyTimeout }, // Use a specific timeout for verification
-          toggleSelector,          // Pass selector to the function
-          initialState             // Pass initial state to the function
+          { timeout: verifyTimeout },
+          toggleSelector,
+          initialState
         );
 
-        // Re-query the element to get the final state reliably after the wait
-        const finalButton = await pageOrFrame.$(toggleSelector); // Use .$ which doesn't wait/throw
+        const finalButton = await pageOrFrame.$(toggleSelector);
         if (finalButton) {
-           const finalState = await finalButton.evaluate(el => el.getAttribute('aria-checked'));
-           console.log(` - Final 'aria-checked' state: ${finalState}`);
-           if (finalState === initialState) {
-               console.warn(" - Warning: State verification indicates the value didn't change.");
-           } else {
-               console.log(" - State successfully verified as changed.");
-           }
-           await finalButton.dispose(); // Clean up the element handle
+          const finalState = await finalButton.evaluate(el => el.getAttribute('aria-checked'));
+          console.log(` - Final 'aria-checked' state: ${finalState}`);
+          if (finalState === initialState) {
+            console.warn(" - Warning: The toggle state did not change.");
+          } else {
+            console.log(" - State successfully verified as changed.");
+          }
+          await finalButton.dispose();
         } else {
-            console.warn(" - Warning: Could not re-find button after click to check final state.");
+          console.warn(" - Warning: Could not re-locate toggle button after click.");
         }
-
       } catch (verificationError) {
-        // This timeout means the attribute didn't change to the expected opposite state
-        // within the verifyTimeout. The click might have worked but the UI update was slow,
-        // or the click failed silently.
-        console.warn(` - Warning: State verification timed out or failed after ${verifyTimeout}ms. The attribute 'aria-checked' may not have changed from '${initialState}'. Error: ${verificationError.message}`);
-        // Optionally, try one last time to read the state without waiting:
-         try {
-            const lastTryButton = await pageOrFrame.$(toggleSelector);
-            if(lastTryButton) {
-                 const lastTryState = await lastTryButton.evaluate(el => el.getAttribute('aria-checked'));
-                 console.log(` - State reading after verification timeout: ${lastTryState}`);
-                 await lastTryButton.dispose();
-            }
-         } catch(e) {/* Ignore error during final check */}
+        console.warn(` - Warning: Verification failed or timed out. Error: ${verificationError.message}`);
+        try {
+          const lastTry = await pageOrFrame.$(toggleSelector);
+          if (lastTry) {
+            const lastTryState = await lastTry.evaluate(el => el.getAttribute('aria-checked'));
+            console.log(` - Final state on fallback check: ${lastTryState}`);
+            await lastTry.dispose();
+          }
+        } catch (e) { /* Silent fallback */ }
       }
     }
 
-    await toggleButton.dispose(); // Clean up the element handle
-    return true; // Click was successful
+    await toggleButton.dispose();
+    return true;
 
   } catch (error) {
-    if (error.name === 'TimeoutError') { // More specific check for Puppeteer TimeoutError
-      console.error(`Error: Timed out waiting for toggle button (${toggleSelector}) after ${timeout}ms.`);
+    if (error.name === 'TimeoutError') {
+      console.error(`❌ Error: Timed out waiting for toggle button after ${timeout}ms.`);
+
+      // Show debug info about other available switches
+      try {
+        const altToggles = await pageOrFrame.$$eval("button[role='switch']", buttons =>
+          buttons.map(b => ({
+            label: b.getAttribute('aria-label'),
+            checked: b.getAttribute('aria-checked'),
+            visible: !!(b.offsetParent !== null)
+          }))
+        );
+        console.log(" - Toggle buttons found at timeout:", altToggles);
+      } catch (scanError) {
+        console.warn(" - Failed to list toggle buttons after timeout.");
+      }
+
     } else {
-      console.error(`Error interacting with toggle button: ${error}`);
+      console.error(`❌ Error interacting with toggle button: ${error.message}`);
     }
-    return false; // Indicate failure
+    return false;
   }
 }
+
 
 /*=================================================================================*/
 
@@ -1191,11 +1205,11 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
         }
 
     
-      //await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
+      await setBootDiskSize(page,Number(row["BootDisk Capacity"]));
       
       
       if (row["mode"]==="sud"){
-        //await toggleSustainedUseDiscount(page);
+          await toggleSustainedUseDiscount(page);
       }
       
       await sleep(2000);

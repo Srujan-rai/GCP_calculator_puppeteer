@@ -178,63 +178,49 @@ async function setUsageTimeOption(page, hours_per_day) {
 
 
 
-  async function setNumberOfInstances(page, no_of_instance) {
-    const targetValue = no_of_instance.toString();
-    // This selector is derived from the HTML you provided:
-    // - input tag
-    // - aria-labelledby="ucc-6" (which is the id of the "Number of instances*" label div)
-    const instancesInputSelector = 'input[aria-labelledby="ucc-6"]';
-    // As an alternative, if jsname is reliably unique for this input:
-    // const instancesInputSelector = 'input[jsname="YPqjbf"]';
+async function setNumberOfInstances(page, no_of_instance) {
+  const targetValue = no_of_instance.toString();
+  const instancesInputSelector = 'input[jsname="YPqjbf"]';
 
-    try {
-        console.log(`Attempting to set Number of Instances to: ${targetValue}`);
+  try {
+      console.log(`Attempting to set Number of Instances to: ${targetValue}`);
 
-        // 1. Wait for the input field to be visible and enabled
-        await page.waitForSelector(instancesInputSelector, { visible: true, timeout: 15000 });
-        console.log("Number of Instances input field found and visible.");
+      await page.waitForSelector(instancesInputSelector, { visible: true, timeout: 15000 });
+      console.log("Number of Instances input field found and visible.");
 
-        // 2. Focus the input field
-        await page.focus(instancesInputSelector);
-        console.log("Focused on Number of Instances input field.");
+      await page.evaluate(selector => {
+          const el = document.querySelector(selector);
+          if (el) el.scrollIntoView({ behavior: 'auto', block: 'center' });
+      }, instancesInputSelector);
 
-        // 3. Clear the existing value
-        // Triple click to select all content in the input field
-        await page.click(instancesInputSelector, { clickCount: 3 });
-        // Press Backspace to delete the selected content
-        await page.keyboard.press('Backspace');
-        console.log("Cleared existing value from Number of Instances input field.");
+      await page.focus(instancesInputSelector);
+      await page.click(instancesInputSelector, { clickCount: 3 });
+      await page.keyboard.press('Backspace');
+      console.log("Cleared existing value from input field.");
 
-        // 4. Type the new value
-        await page.type(instancesInputSelector, targetValue, { delay: 50 }); // Adding a small delay can sometimes improve reliability
-        console.log(`Typed "${targetValue}" into the Number of Instances input field.`);
-        
-        // It's often good practice to blur the field or press Enter if the UI reacts to these events
-        // await page.keyboard.press('Enter'); // or await page.blur(instancesInputSelector);
+      // Allow integers or floats (like "4", "4.0", "4.10")
+      if (!/^\d+(\.\d+)?$/.test(targetValue)) {
+          throw new Error(`Invalid input value: "${targetValue}". Only numbers are allowed.`);
+      }
 
-        // 5. Verification (highly recommended)
-        // Wait a brief moment for any potential debounce or UI update after typing
-        //await page.waitForTimeout(200); // Adjust if needed
+      await page.type(instancesInputSelector, targetValue, { delay: 50 });
+      console.log(`Typed "${targetValue}" into input.`);
 
-        const inputValue = await page.evaluate(selector => {
-            const el = document.querySelector(selector);
-            return el ? el.value : null;
-        }, instancesInputSelector);
+      await page.keyboard.press('Tab');
 
-        if (inputValue === targetValue) {
-            console.log(`✅ Number of Instances successfully set to: ${inputValue}`);
-        } else {
-            console.error(`❌ Verification failed. Expected: "${targetValue}", Actual: "${inputValue}"`);
-            // You might want to throw an error here if strict verification is needed
-            // throw new Error(`Failed to set Number of Instances. Expected: "${targetValue}", Actual: "${inputValue}"`);
-        }
+      const inputValue = await page.$eval(instancesInputSelector, el => el.value);
+      if (parseFloat(inputValue).toFixed(2) === parseFloat(targetValue).toFixed(2)) {
+          console.log(`✅ Number of Instances successfully set to: ${inputValue}`);
+      } else {
+          throw new Error(`❌ Verification failed. Expected: "${targetValue}", Found: "${inputValue}"`);
+      }
 
-    } catch (error) {
-        console.error(`Error in setNumberOfInstances for value "${targetValue}":`, error);
-        // Re-throw the error if you want the calling function to handle it
-        throw error;
-    }
+  } catch (error) {
+      console.error(`Error in setNumberOfInstances for value "${targetValue}":`, error.message);
+      throw error;
+  }
 }
+
 
 
 async function setTotalInstanceUsageTime(page, hours) {
@@ -1200,9 +1186,9 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       }
       await sleep(2000) 
       await setNumberOfInstances(page, row["No. of Instances"]);
-      {
+      if (row["Avg no. of hrs"] < 730){
         await setTotalInstanceUsageTime(page,row["Avg no. of hrs"]);
-        }
+      }
 
     
       await setBootDiskSize(page,Number(row["BootDisk Capacity"]));

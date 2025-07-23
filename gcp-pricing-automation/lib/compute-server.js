@@ -647,7 +647,6 @@ async function setAmountOfMemory(page, memoryToSet) {
   let inputHandle = null;
 
   try {
-    // Directly query the input by ID and class combination
     inputHandle = await page.$(`input#${knownInputId}.${targetInputClass}[type="number"]`);
     
     if (!inputHandle) {
@@ -1204,7 +1203,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       }
       await sleep(1000);
 
-      if (row["mode"]!=="sud"){
+      if (row["mode"]!=="su/vd"){
         await selectCommittedUseDiscountOption(page,row["mode"]);
 
       }

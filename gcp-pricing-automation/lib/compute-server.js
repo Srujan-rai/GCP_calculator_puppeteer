@@ -638,28 +638,62 @@ async function setNumberOfvCPUs(page, vcpusToSet) {
 
 async function setAmountOfMemory(page, memoryToSet) {
   const inputLabelText = 'Amount of memory';
-  const targetInputClass = 'qdOxv-fmcmS-wGMbrd';
-  const knownInputId = 'c27';
-  const labelElementId = 'ucc-49';
+  const targetInputAriaLabelledBy = 'ucc-48'; // Based on your HTML snippet
 
   console.log(`🧠 Attempting to set "${inputLabelText}" to: ${memoryToSet} GiB`);
 
+  let targetFrame = page; // Assume main page initially
   let inputHandle = null;
 
   try {
-    inputHandle = await page.$(`input#${knownInputId}.${targetInputClass}[type="number"]`);
-    
-    if (!inputHandle) {
-      console.warn(`⚠️ Direct selector lookup failed. Falling back to class lookup.`);
-      inputHandle = await page.$(`input.${targetInputClass}[type="number"]`);
+    // --- STEP 0: Check for iframe (common for Google Cloud Console) ---
+    const iframeSelector = 'iframe[title="Google Cloud Pricing Calculator"]'; // Or a more specific selector if needed
+    const iframeElementHandle = await page.$(iframeSelector);
+
+    if (iframeElementHandle) {
+      console.log('✅ Found Google Cloud Pricing Calculator iframe. Switching context...');
+      targetFrame = await iframeElementHandle.contentFrame();
+      if (!targetFrame) {
+        throw new Error('Could not get content frame for the pricing calculator iframe.');
+      }
+    } else {
+      console.log('ℹ️ No pricing calculator iframe found. Operating on main page.');
+    }
+    // --- END STEP 0 ---
+
+    // Strategy 1: Target the <input type="number"> directly by its aria-labelledby attribute
+    const directInputSelector = `input[type="number"][aria-labelledby="${targetInputAriaLabelledBy}"]`;
+    inputHandle = await targetFrame.$(directInputSelector);
+
+    if (inputHandle) {
+      console.log(`- Successfully obtained input element using direct CSS selector for type="number".`);
+    } else {
+      console.warn(`⚠️ Direct CSS selector failed. Falling back to more generic search.`);
+      // Fallback: Generic type="number" with a known class
+      inputHandle = await targetFrame.$(`input.qdOxv-fmcmS-wGMbrd[type="number"]`);
+      if (inputHandle) {
+        console.log(`- Successfully obtained input element using generic class selector.`);
+      }
     }
 
     if (!inputHandle) {
-      console.warn(`⚠️ Class lookup failed. Falling back to XPath.`);
-      const xpath = `//input[@type="number" and @id="${knownInputId}"] | //input[@type="number" and contains(@aria-labelledby, "${labelElementId}")]`;
-      const handles = await page.$x(xpath);
-      if (handles.length > 0) {
-        inputHandle = handles[0];
+      // Broader fallback: Look for any visible input type="number" related to "Amount of memory"
+      console.warn(`⚠️ All specific selectors failed. Attempting a broader search for the number input.`);
+      const inputs = await targetFrame.$$('input[type="number"]');
+      for (const input of inputs) {
+          const ariaLabelledBy = await input.evaluate(el => el.getAttribute('aria-labelledby'));
+          if (ariaLabelledBy) {
+              try {
+                  const labelText = await targetFrame.$eval(`#${ariaLabelledBy}`, el => el.textContent);
+                  if (labelText.includes(inputLabelText)) {
+                      inputHandle = input;
+                      console.log(`- Successfully obtained input element using broad search with aria-labelledby.`);
+                      break;
+                  }
+              } catch (e) {
+                  // Label element might not be found or readable, ignore this input
+              }
+          }
       }
     }
 
@@ -667,23 +701,32 @@ async function setAmountOfMemory(page, memoryToSet) {
       throw new Error(`Could not locate input element for "${inputLabelText}" after all strategies.`);
     }
 
-    console.log(`- Successfully obtained input element.`);
-
-    // Click on the parent container to ensure input focus
-    const containerHandle = await inputHandle.evaluateHandle(el => el.closest('div[jsaction]') || el.parentElement);
-    if (containerHandle) {
-      await containerHandle.click();
-      console.log(`- Clicked container to focus input.`);
-    }
-
-    // Clear and set value
+    // --- REVISED INTERACTION STRATEGY FOR NUMBER INPUT ---
     await inputHandle.focus();
-    await page.evaluate((input, newValue) => {
+    console.log(`- Focused input element directly.`);
+
+    await inputHandle.click(); // Click to ensure it's fully active and ready for input
+    console.log(`- Clicked input element directly.`);
+
+    // Option 1 (Preferred for numbers): Clear by setting value to empty string and dispatching events
+    await targetFrame.evaluate((input) => {
       input.value = '';
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event for clearing
+      input.dispatchEvent(new Event('change', { bubbles: true })); // Trigger change event
+    }, inputHandle);
+    console.log(`- Attempted to clear value by setting to empty string.`);
+
+    // Option 2 (Fallback if Option 1 not enough for UI): Simulate Backspace presses
+    // This is often more reliable for number inputs if direct value setting doesn't trigger UI updates.
+    // However, it requires knowing the max possible digits to clear. A safer way is multiple backspaces.
+    // Or, better, just type over. Puppeteer's `type` method handles existing text well for many cases.
+    // Let's stick with the `evaluate` method first as it's cleaner.
+
+    // Set the new value
+    await targetFrame.evaluate((input, newValue) => {
       input.value = newValue;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event for new value
+      input.dispatchEvent(new Event('change', { bubbles: true })); // Trigger change event
     }, inputHandle, memoryToSet.toString());
 
     console.log(`- Value set to ${memoryToSet}`);
@@ -693,16 +736,14 @@ async function setAmountOfMemory(page, memoryToSet) {
 
   } catch (error) {
     const screenshotName = `error_set_memory_${memoryToSet}_failed.png`;
-    await page.screenshot({ path: screenshotName });
+    await page.screenshot({ path: screenshotName }); // Use original 'page' for full screenshot
     console.error(`❌ Failed to set memory. Screenshot saved: ${screenshotName}`);
-    console.error(`Debug manually by inspecting input#${knownInputId} on ${page.url()}`);
+    console.error(`Debug manually by inspecting the page at ${page.url()}`);
     throw error;
   }
 
   console.log(`👍 Successfully set "${inputLabelText}" to "${memoryToSet} GiB".`);
 }
-
-
 
 
 async function setBootDiskSize(pageOrFrame, sizeInGB) {
@@ -1203,7 +1244,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       }
       await sleep(1000);
 
-      if (row["mode"]!=="su/vd"){
+      if (row["mode"]!=="sud"){
         await selectCommittedUseDiscountOption(page,row["mode"]);
 
       }

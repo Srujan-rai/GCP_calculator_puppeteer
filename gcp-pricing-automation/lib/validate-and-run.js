@@ -196,12 +196,15 @@ async function sendToComputeContainer(mode, payload) {
     
       const resultObj = { Sl: row.Sl, timestamp: new Date().toISOString() };
     
-      const machineClass = row.machine_class?.toLowerCase();
-      const series = row.series?.toUpperCase();
-      const hours = parseFloat(row.hours_per_Day || 0);
+      const machineClass = row["Machine Class"]?.toLowerCase(); 
+      const series = row["Series"]?.toUpperCase();  
+      const hours = parseFloat(row["Avg no. of hrs"] || 0);
+
+      console.log(` hours: ${hours}`);
+      console.log(` machineClass: ${machineClass}`);
+      console.log(` series: ${series}`);
     
       if (machineClass === 'preemptible') {
-        // PREEMPTIBLE
         const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });
         ['sud', '1year', '3year'].forEach(mode => {
           resultObj[`${mode}_price`] = ondemand?.price || null;
@@ -213,40 +216,52 @@ async function sendToComputeContainer(mode, payload) {
         resultObj['ondemand_url'] = ondemand?.url || null;
         resultObj['ondemand_machineType'] = ondemand?.machineType || null;
         resultObj['ondemand_specs'] = ondemand?.specs || null;
+        console.log(`[validate-and-run.js] ✅ Completed compute for Sl ${row.Sl} (preemptible)`);
     
-      } else if (machineClass === 'regular' && hours < 730) {
-        // REGULAR underutilized
+      }
+
+      else if (machineClass === 'regular' && hours < 730) {
         const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });
+      
         resultObj['ondemand_price'] = ondemand?.price || null;
         resultObj['ondemand_url'] = ondemand?.url || null;
         resultObj['ondemand_machineType'] = ondemand?.machineType || null;
         resultObj['ondemand_specs'] = ondemand?.specs || null;
       
         if (series === 'C2D') {
-          // Copy ondemand to all others
+          // Copy ondemand to sud, 1year, 3year
           ['sud', '1year', '3year'].forEach(mode => {
             resultObj[`${mode}_price`] = ondemand?.price || null;
             resultObj[`${mode}_url`] = ondemand?.url || null;
             resultObj[`${mode}_machineType`] = ondemand?.machineType || null;
             resultObj[`${mode}_specs`] = ondemand?.specs || null;
           });
+      
+          console.log("C2D detected — copied ondemand to sud, 1year, 3year");
         } else {
-          // Compute sud, copy its result to 1year and 3year
+          // Call sud
           const sud = await sendToComputeContainer('sud', { ...rowWithMeta, mode: 'sud' });
+      
           resultObj['sud_price'] = sud?.price || null;
           resultObj['sud_url'] = sud?.url || null;
           resultObj['sud_machineType'] = sud?.machineType || null;
           resultObj['sud_specs'] = sud?.specs || null;
       
-          // Copy sud's result to 1year and 3year
+          // Copy sud to 1year and 3year
           ['1year', '3year'].forEach(mode => {
             resultObj[`${mode}_price`] = sud?.price || null;
             resultObj[`${mode}_url`] = sud?.url || null;
             resultObj[`${mode}_machineType`] = sud?.machineType || null;
             resultObj[`${mode}_specs`] = sud?.specs || null;
           });
+      
+          console.log("Non-C2D — used separate sud and copied it to 1year and 3year");
         }
-      } else if (series === 'E2' || series === 'C2D') {
+      }
+       
+      
+      
+      else if (series === 'E2' || series === 'C2D') {
         // REGULAR or others with E2 or C2D
         const ondemand = await sendToComputeContainer('ondemand', { ...rowWithMeta, mode: 'ondemand' });
         resultObj['ondemand_price'] = ondemand?.price || null;
@@ -273,9 +288,11 @@ async function sendToComputeContainer(mode, payload) {
         resultObj['3year_url'] = year3?.url || null;
         resultObj['3year_machineType'] = year3?.machineType || null;
         resultObj['3year_specs'] = year3?.specs || null;
+        console.log(`[validate-and-run.js] ✅ Completed compute for Sl ${row.Sl} (E2 or C2D)`);
     
-      } else {
-        // Full parallel mode
+      } 
+      
+      else {
         const [sud, ondemand, year1, year3] = await Promise.all(
           ['sud', 'ondemand', '1year', '3year'].map(mode =>
             sendToComputeContainer(mode, { ...rowWithMeta, mode }))
@@ -290,6 +307,7 @@ async function sendToComputeContainer(mode, payload) {
           resultObj[`${mode}_machineType`] = result?.machineType || null;
           resultObj[`${mode}_specs`] = result?.specs || null;
         }
+        console.log(`[validate-and-run.js] ✅ Completed compute for Sl ${row.Sl} (custom or other series)`);
       }
     
       computeResults[row.Sl] = resultObj;

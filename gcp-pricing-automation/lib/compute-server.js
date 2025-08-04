@@ -55,23 +55,35 @@ async function mainHomePage(page,url) {
 
 async function computeEngineModal(page) {
   console.log('Waiting for modal...');
-  await sleep(5000); // Consider replacing with `waitForSelector` if modal is dynamic
+  const selector = 'div.DzHYNd > div.VobRQb > div.aHij0b-WsjYwc.b9Ejl div[role="button"] h2.honxjf';
+  
+  // Use Promise.race to wait for the main selector or a potential error message.
+  const foundElement = await Promise.race([
+    page.waitForSelector(selector, { timeout: 10000, visible: true }),
+    page.waitForSelector('body .error-message', { timeout: 10000, visible: true }),
+  ]);
 
-  console.log('Searching for Compute Engine tile...');
-  const clicked = await page.$$eval('div[role="button"]', (tiles) => {
-    const tile = tiles.find(el => el.textContent.includes('Compute Engine'));
-    if (tile) {
-      tile.scrollIntoView({ behavior: 'instant', block: 'center' });
-      tile.click();
-      return true;
+  // Check which promise resolved first.
+  if (foundElement) {
+    const textContent = await page.evaluate(el => el.textContent, foundElement);
+    if (textContent.includes('Compute Engine')) {
+      console.log('✅ Found Compute Engine tile via main selector');
+      await foundElement.click();
+      console.log('✅ Compute Engine clicked');
+      return;
+    } else {
+      console.error(`❌ Unexpected element found: ${textContent}`);
+      throw new Error('❌ Compute Engine tile not found after waiting');
     }
-    return false;
-  });
-
-  if (clicked) {
-    console.log('✅ Compute Engine clicked');
   } else {
-    throw new Error('❌ Compute Engine tile not found');
+    // If foundElement is null, the error selector might have been found.
+    const errorMessage = await page.$('body .error-message');
+    if (errorMessage) {
+      const errorText = await page.evaluate(el => el.textContent, errorMessage);
+      throw new Error(`❌ Modal failed to load due to error: ${errorText}`);
+    } else {
+      throw new Error('❌ Modal and Compute Engine tile not found within timeout');
+    }
   }
 }
 
@@ -1253,13 +1265,6 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       url=await scrapeUrl(page);
       price=await scrapeEstimatedPrice(page);
       await sleep(1000);
-      
-
-
-
-
-  
-      
 
       return {
         price,

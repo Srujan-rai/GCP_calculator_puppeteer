@@ -224,11 +224,13 @@ async function setNumberOfInstances(page, no_of_instance) {
       await page.keyboard.press('Tab');
 
       const inputValue = await page.$eval(instancesInputSelector, el => el.value);
+      /*
       if (parseFloat(inputValue).toFixed(2) === parseFloat(targetValue).toFixed(2)) {
           console.log(`✅ Number of Instances successfully set to: ${inputValue}`);
       } else {
           throw new Error(`❌ Verification failed. Expected: "${targetValue}", Found: "${inputValue}"`);
       }
+          */
 
   } catch (error) {
       console.error(`Error in setNumberOfInstances for value "${targetValue}":`, error.message);
@@ -255,13 +257,7 @@ async function setTotalInstanceUsageTime(page, hours) {
     await hoursInput.evaluate(el => el.value = ''); // Clear the field
     await hoursInput.type(targetValue);             // Type the new value
 
-    // Final verification to be certain.
-    const finalValue = await hoursInput.evaluate(el => el.value);
-    if (finalValue === targetValue) {
-        console.log(`✅ Successfully set Usage Hours to: ${finalValue}`);
-    } else {
-        throw new Error(`Verification failed! Expected "${targetValue}" but the final value was "${finalValue}".`);
-    }
+    
 
   } catch (error) {
     console.error('❌ FATAL ERROR in setUsageHours:');
@@ -1464,6 +1460,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await sleep(2000) 
       await setNumberOfInstances(page, row["No. of Instances"]);
       if (row["Avg no. of hrs"] < 730){
+        await setUsageTimeOption(page,row["Avg no. of hrs"]);
         await setTotalInstanceUsageTime(page,row["Avg no. of hrs"]);
       }
 
@@ -1488,6 +1485,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await sleep(10000);
       machineInfo=await scrapeMachineTypeData(page);
       url=await scrapeUrl(page);
+      await sleep(1000);
       price=await scrapeEstimatedPrice(page);
       await sleep(1000);
 

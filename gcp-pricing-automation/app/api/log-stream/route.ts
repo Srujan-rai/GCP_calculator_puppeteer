@@ -28,12 +28,7 @@ export async function GET() {
 
       const interval = setInterval(() => log('[💡 heartbeat]'), 5000);
 
-      setTimeout(() => {
-        clearInterval(interval);
-        isClosed = true;
-        controllerRef?.close();
-        console.log = originalLog;
-      }, 10 * 60 * 1000);
+    
     },
 
     cancel() {

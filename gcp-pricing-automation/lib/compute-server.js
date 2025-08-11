@@ -168,10 +168,12 @@ async function setUsageTimeOption(page, hours_per_day) {
   console.log(`⏲️ Setting Usage Time Option based on hours per day: ${hours_per_day}`);
 
   if (hours_per_day > 0 && hours_per_day < 5) {
-      const toggleSelector = 'button[role="switch"][aria-labelledby="ucc-4"]';
+      // Use the more robust selector that doesn't rely on a changing ID
+      const toggleSelector = '.tGsoUb button[role="switch"]';
 
       await page.waitForSelector(toggleSelector, { visible: true });
 
+      // The rest of your logic remains the same
       const isChecked = await page.$eval(toggleSelector, btn => btn.getAttribute('aria-checked') === 'true');
 
       if (!isChecked) {
@@ -1451,7 +1453,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
             await sleep(1000)
             await setAmountOfMemory(page, Number(row["RAM"]));
             console.log(`Updated memory to: ${Number(row["RAM"])} GiB`);
-            
+
           }
 
 

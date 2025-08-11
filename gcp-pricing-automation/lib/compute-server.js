@@ -1,3 +1,4 @@
+const { time } = require('console');
 const express = require('express');
 const puppeteer = require('puppeteer');
 const app = express();
@@ -647,6 +648,88 @@ async function setNumberOfvCPUs(page, vcpusToSet) {
   console.log(`👍 Successfully set "${inputLabelText}" to "${vcpusToSet}".`);
 }
 
+async function extendmemory_toggle(page) {
+  console.log("Attempting to toggle the 'Extended memory' switch...");
+
+  // Strategy 1: The Best Method - Find by Label and ARIA association
+  // This is the most robust method as it mimics user behavior and relies on
+  // accessibility attributes that are less likely to change than IDs or classes.
+  try {
+      console.log("  Trying Strategy 1: Find by label text and ARIA attribute...");
+      const success = await page.evaluate(() => {
+          const labelText = 'Extended memory';
+          // Find the exact div acting as a label.
+          const labelDiv = Array.from(document.querySelectorAll('div'))
+                                .find(div => div.textContent.trim() === labelText && div.id);
+          
+          if (labelDiv) {
+              // Now find the switch that is explicitly linked to this label's ID.
+              const switchElement = document.querySelector(`button[role="switch"][aria-labelledby="${labelDiv.id}"]`);
+              if (switchElement) {
+                  switchElement.click();
+                  return true; // Success!
+              }
+          }
+          return false; // This strategy failed.
+      });
+
+      if (success) {
+          console.log("✅ Success: Toggled using Strategy 1.");
+          return; 
+      }
+      throw new Error("Strategy 1 failed: Could not find element via ARIA attributes.");
+  } catch (error) {
+      console.warn(` Warning: ${error.message}. Proceeding to fallback.`);
+  }
+
+
+  try {
+      console.log("  Trying Strategy 2: Find using a structural XPath...");
+      const xpath = `//div[normalize-space()='Extended memory']/parent::div/preceding-sibling::div//button[@role='switch']`;
+      const [switchHandle] = await page.$x(xpath);
+      
+      if (switchHandle) {
+          await switchHandle.click();
+          console.log("Success: Toggled using Strategy 2 (XPath).");
+          return;
+      }
+      throw new Error("Strategy 2 failed: XPath selector did not find the element.");
+  } catch (error) {
+      console.warn(`Warning: ${error.message}. Proceeding to final fallback.`);
+  }
+
+
+  try {
+      console.log("  Trying Strategy 3: Find any switch near the label text...");
+      const success = await page.evaluate(() => {
+           const labelText = 'Extended memory';
+           const allElements = Array.from(document.querySelectorAll('*'));
+           const labelElement = allElements.find(el => el.textContent.trim() === labelText);
+
+           if (labelElement) {
+              const searchArea = labelElement.closest('.TWJfR, .cpgG7')?.parentElement;
+              if(searchArea){
+                  const switchButton = searchArea.querySelector('button[role="switch"]');
+                   if (switchButton) {
+                      switchButton.click();
+                      return true;
+                  }
+              }
+           }
+           return false;
+      });
+      
+      if(success){
+          console.log(" Success: Toggled using Strategy 3 (General Search).");
+          return;
+      }
+      throw new Error("Strategy 3 failed: Could not find a switch near the label.");
+
+  } catch (error) {
+       console.error(` Failure: All strategies failed. Could not toggle the switch. Last error: ${error.message}`);
+       
+  }
+}
 
 async function setAmountOfMemory(page, memoryToSet) {
   const inputLabelText = 'Amount of memory';
@@ -757,7 +840,64 @@ async function setAmountOfMemory(page, memoryToSet) {
   console.log(`👍 Successfully set "${inputLabelText}" to "${memoryToSet} GiB".`);
 }
 
+async function getAmountOfMemory(page) {
+  const inputLabelText = 'Amount of memory';
+  const targetInputAriaLabelledBy = 'ucc-48'; // Used for the direct selector
+  let inputHandle = null;
+  let targetFrame = page;
 
+  console.log(`🔍 Attempting to read value from "${inputLabelText}" input...`);
+
+  try {
+    // --- STEP 1: Find the correct frame (iframe or main page) ---
+    // This logic is copied directly from your setAmountOfMemory function for consistency.
+    const iframeElementHandle = await page.$('iframe[title="Google Cloud Pricing Calculator"]');
+    if (iframeElementHandle) {
+      console.log('  - Found iframe, switching context.');
+      targetFrame = await iframeElementHandle.contentFrame();
+      if (!targetFrame) {
+        throw new Error('Could not get content frame for the iframe.');
+      }
+    }
+
+    inputHandle = await targetFrame.$(`input[type="number"][aria-labelledby="${targetInputAriaLabelledBy}"]`);
+
+    if (!inputHandle) {
+        console.warn('  - Direct selector failed, trying class-based fallback...');
+        inputHandle = await targetFrame.$(`input.qdOxv-fmcmS-wGMbrd[type="number"]`);
+    }
+
+    if (!inputHandle) {
+        console.warn('  - Generic selector failed, trying broad search by label...');
+        const inputs = await targetFrame.$$('input[type="number"]');
+        for (const input of inputs) {
+            const ariaLabelledBy = await input.evaluate(el => el.getAttribute('aria-labelledby'));
+            if (ariaLabelledBy) {
+                try {
+                    const labelText = await targetFrame.$eval(`#${ariaLabelledBy}`, el => el.textContent);
+                    if (labelText.includes(inputLabelText)) {
+                        inputHandle = input;
+                        break;
+                    }
+                } catch (e) { /* Label might not be found, just ignore and continue */ }
+            }
+        }
+    }
+
+    if (!inputHandle) {
+      throw new Error(`Could not locate input element for "${inputLabelText}" after all strategies.`);
+    }
+
+    const currentValue = await inputHandle.evaluate(el => el.value);
+    console.log(`  - Successfully found input. Current value is: "${currentValue}"`);
+
+    return parseFloat(currentValue);
+
+  } catch (error) {
+    console.error(`❌ Failed to read memory value.`, error);
+    throw error;
+  }
+}
 async function setBootDiskSize(pageOrFrame, sizeInGB) {
   console.log(`💾 Setting Boot Disk Size to ${sizeInGB} GB`);
 
@@ -1232,8 +1372,90 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
         
         
           await setNumberOfvCPUs(page, Number(row["vCPUs"]));
-          await sleep(1000);
+          //await sleep(1000);
+          //await extendmemory_toggle(page);
+          await sleep(1000)
           await setAmountOfMemory(page,Number(row["RAM"]));
+          const currentMemory = await getAmountOfMemory(page);
+          console.log(`The current memory amount is: ${currentMemory} GiB`);
+          
+          
+          // this is for extend memory mapping values 
+          const n1Limits = new Map([
+            [2, 13], [4, 26], [6, 39], [8, 52], [10, 65], [12, 78], [14, 91],
+            [16, 104], [18, 117], [20, 130], [22, 143], [24, 156], [26, 169],
+            [28, 182], [30, 195], [32, 208], [34, 221], [36, 234], [38, 247],
+            [40, 260], [42, 273], [44, 286], [46, 299], [48, 312], [50, 325],
+            [52, 338], [54, 351], [56, 364], [58, 377], [60, 390], [62, 403],
+            [64, 416], [66, 429], [68, 442], [70, 455], [72, 468], [74, 481],
+            [76, 494], [78, 507], [80, 520], [82, 533], [84, 546], [86, 559],
+            [88, 572], [90, 585], [92, 598], [94, 611], [96, 624]
+        ]);
+        const n2Limits = new Map([
+            [2, 8], [4, 32], [6, 48], [8, 64], [10, 80], [12, 96], [14, 112],
+            [16, 128], [18, 144], [20, 160], [22, 176], [24, 192], [26, 208],
+            [28, 224], [30, 240], [32, 256], [34, 272], [36, 288], [38, 304],
+            [40, 320], [42, 336], [44, 352], [46, 368], [48, 384], [50, 400],
+            [52, 416], [54, 432], [56, 448], [58, 464], [60, 480], [62, 496],
+            [64, 512], [66, 528], [68, 544], [70, 560], [72, 576], [74, 592],
+            [76, 608], [78, 624], [80, 640], [82, 656], [84, 672], [86, 688],
+            [88, 704], [90, 720], [92, 736], [94, 752], [96, 768], [98, 784],
+            [100, 800], [102, 816], [104, 832], [106, 848], [108, 864], [110, 864],
+            [112, 864], [114, 864], [116, 864], [118, 864], [120, 864], [122, 864],
+            [124, 864], [126, 864], [128, 864]
+        ]);
+        const n2dLimits = new Map([
+            [2, 16], [4, 32], [6, 48], [8, 64], [10, 80], [12, 96], [14, 112],
+            [16, 128], [18, 144], [20, 160], [22, 176], [24, 192], [26, 208],
+            [28, 224], [30, 240], [32, 256], [34, 272], [36, 288], [38, 304],
+            [40, 320], [42, 336], [44, 352], [46, 368], [48, 384], [50, 400],
+            [52, 416], [54, 432], [56, 448], [58, 464], [60, 480], [62, 496],
+            [64, 512], [66, 528], [68, 544], [70, 560], [72, 576], [74, 592],
+            [76, 608], [78, 624], [80, 640], [82, 656], [84, 672], [86, 688],
+            [88, 704], [90, 720], [92, 736], [94, 752], [96, 768], [98, 784],
+            [100, 800], [102, 816], [104, 832], [106, 848], [108, 864], [110, 880],
+            [112, 896], [114, 896], [116, 896], [118, 896], [120, 896], [122, 896],
+            [124, 896], [126, 896], [128, 896], [130, 896], [132, 896], [134, 896],
+            [136, 896], [138, 896], [140, 896], [142, 896], [144, 896], [146, 896],
+            [148, 896], [150, 896], [152, 896], [154, 896], [156, 896], [158, 896],
+            [160, 896], [162, 896], [164, 896], [166, 896], [168, 896], [170, 896],
+            [172, 896], [174, 896], [176, 896], [178, 896], [180, 896], [182, 896],
+            [184, 896], [186, 896], [188, 896], [190, 896], [192, 896], [194, 896],
+            [196, 896], [198, 896], [200, 896], [202, 896], [204, 896], [206, 896],
+            [208, 896], [210, 896], [212, 896], [214, 896], [216, 896], [218, 896],
+            [220, 896], [222, 896], [224, 896]
+        ]);
+        const allSeriesLimits = new Map([
+            ['n1', n1Limits],
+            ['n2', n2Limits],
+            ['n2d', n2dLimits]
+        ]);
+
+        const currentRuleBook = allSeriesLimits.get(row["Series"].toLowerCase());
+        if (!currentRuleBook) {
+          throw new Error(`Invalid machine series: '${row["Series"]}'. No rule book found.`);
+        }
+
+        const maxStandardRam = currentRuleBook.get(Number(row["vCPUs"]));
+        if (maxStandardRam === undefined) {
+          throw new Error(`Invalid vCPU count for series '${row["Series"]}': ${Number(row["vCPUs"])}. Check the rule book.`);
+        }
+        console.log(`- Rule check: Max standard RAM for ${Number(row["vCPUs"])} vCPUs in this series is ${maxStandardRam} GiB.`);
+      
+        if (Number(row["RAM"]) > maxStandardRam) {
+          console.log(`- Desired RAM (${Number(row["RAM"])} GiB) > Standard limit (${maxStandardRam} GiB). Triggering extended memory sequence...`);
+      
+            await setAmountOfMemory(page, maxStandardRam-2);
+            await sleep(1000);
+            extendmemory_toggle(page);
+            await sleep(1000)
+            await setAmountOfMemory(page, Number(row["RAM"]));
+            console.log(`Updated memory to: ${Number(row["RAM"])} GiB`);
+          }
+
+
+          
+          
 
       }
       await sleep(2000) 

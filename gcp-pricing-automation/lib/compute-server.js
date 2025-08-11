@@ -1451,6 +1451,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
             await sleep(1000)
             await setAmountOfMemory(page, Number(row["RAM"]));
             console.log(`Updated memory to: ${Number(row["RAM"])} GiB`);
+            
           }
 
 

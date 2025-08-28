@@ -1325,7 +1325,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       console.log(`\n🎯 Starting automation for row ${sl}...`);
       
       browser = await puppeteer.launch({
-        headless: true ,
+        headless: false ,
         args: ['--no-sandbox']
       });
       
@@ -1373,9 +1373,9 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
           //await sleep(1000);
           //await extendmemory_toggle(page);
           await sleep(1000)
-          await setAmountOfMemory(page,Number(row["RAM"]));
-          const currentMemory = await getAmountOfMemory(page);
-          console.log(`The current memory amount is: ${currentMemory} GiB`);
+          //await setAmountOfMemory(page,Number(row["RAM"]));
+          //const currentMemory = await getAmountOfMemory(page);
+          //console.log(`The current memory amount is: ${currentMemory} GiB`);
           
           
           // this is for extend memory mapping values 
@@ -1451,6 +1451,13 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
             console.log(`Updated memory to: ${Number(row["RAM"])} GiB`);
 
           }
+          else {
+            console.log(`- Desired RAM (${Number(row["RAM"])} GiB) within standard limit (${maxStandardRam} GiB). Setting directly...`);
+            await setAmountOfMemory(page, Number(row["RAM"]));
+            console.log(`Updated memory to: ${Number(row["RAM"])} GiB`);
+          }
+        
+        
 
 
           
@@ -1485,9 +1492,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       await sleep(10000);
       machineInfo=await scrapeMachineTypeData(page);
       url=await scrapeUrl(page);
-      await sleep(1000);
       price=await scrapeEstimatedPrice(page);
-      await sleep(1000);
 
       return {
         price,

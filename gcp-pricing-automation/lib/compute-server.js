@@ -27,7 +27,7 @@ app.post('/compute', async (req, res) => {
   res.json(result);
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🧠 Compute server for ${process.env.MODE} running on port ${PORT}`);
 });
@@ -553,93 +553,59 @@ async function selectMachineType(page, machineTypeLabel) {
 
 async function setNumberOfvCPUs(page, vcpusToSet) {
   const inputLabelText = 'Number of vCPUs';
-  // Based on your latest HTML snippet, the specific ID for vCPUs input is 'c26'
-  const specificInputId = 'c26'; // This will be used as a primary selector/fallback
-
   console.log(`⚙️ Attempting to set "${inputLabelText}" to: ${vcpusToSet}`);
 
-  let inputSelector = null; // This variable will hold the CSS selector for the vCPUs input
-
   try {
-    // --- Selector Strategy (remains robust as discussed) ---
-    inputSelector = await page.evaluate((labelText, specificId) => {
-      // Prioritize finding by aria-labelledby
-      const inputsByAriaLabelledBy = Array.from(document.querySelectorAll('input[type="number"][aria-labelledby]'));
-      for (const input of inputsByAriaLabelledBy) {
-        const labelId = input.getAttribute('aria-labelledby');
-        if (labelId) {
-          const labelElement = document.getElementById(labelId);
-          if (labelElement && labelElement.innerText.includes(labelText)) {
-            return `input[aria-labelledby="${labelId}"][type="number"]`;
-          }
-        }
-      }
+    // --- REFINED SELECTOR STRATEGY ---
+    // 1. Find the label element by its exact text content.
+    // We use an XPath expression for this as it's powerful for finding elements by text.
+    const labelXPath = `//div[normalize-space()='${inputLabelText}']`;
+    await page.waitForSelector(`xpath/${labelXPath}`, { visible: true, timeout: 10000 });
+    const labelElements = await page.$$(`xpath/${labelXPath}`);
 
-      // Fallback 2: Check for direct aria-label
-      const directAriaLabelInput = document.querySelector(`input[type="number"][aria-label*="${labelText}" i]`);
-      if (directAriaLabelInput) {
-        return directAriaLabelInput.id ? `#${directAriaLabelInput.id}` : `input[type="number"][aria-label*="${labelText}" i]`;
-      }
-
-      // Fallback 3: Use specificId if known and accessible strategies failed
-      if (specificId) {
-          const inputById = document.getElementById(specificId);
-          if (inputById && inputById.type === 'number') {
-              return `#${specificId}`;
-          }
-      }
-
-      return null; // No suitable input found via preferred strategies
-    }, inputLabelText, specificInputId);
-
-    // Final fallback: generic selector (less reliable)
-    if (!inputSelector) {
-      console.warn(`⚠️ No specific selector found for "${inputLabelText}". Attempting generic number input. This is less reliable.`);
-      inputSelector = 'input[type="number"][min][max]';
+    if (labelElements.length === 0) {
+      throw new Error(`Could not find a label div with the text "${inputLabelText}".`);
     }
 
-    if (!inputSelector) {
-        throw new Error(`Could not construct a valid input selector for "${inputLabelText}". Please inspect the page's HTML.`);
+    // 2. Get the 'id' of that label element.
+    const labelId = await page.evaluate(el => el.id, labelElements[0]);
+    if (!labelId) {
+      throw new Error(`The found label for "${inputLabelText}" does not have an ID.`);
     }
+    console.log(`- Found label with ID: #${labelId}`);
 
-    // Wait for the determined input element to be visible
-    await page.waitForSelector(inputSelector, { visible: true, timeout: 10000 });
-    console.log(`- Found input field for "${inputLabelText}" using selector: ${inputSelector}`);
+    // 3. Construct a precise CSS selector for the input using its `aria-labelledby` attribute.
+    // This is the most stable and accessible way to link a label to its input.
+    const inputSelector = `input[type="number"][aria-labelledby="${labelId}"]`;
+    await page.waitForSelector(inputSelector, { visible: true, timeout: 5000 });
+    console.log(`- Found input field using selector: ${inputSelector}`);
+    // --- END REFINED STRATEGY ---
 
-    // --- CRITICAL UPDATE: More Reliable Clearing and Setting ---
+    // --- Interaction Logic (Your method is excellent, let's keep it) ---
+    // This approach is robust for web apps built with frameworks like React or Angular.
+    // It ensures that the application's state updates correctly.
     await page.evaluate((selector, newValue) => {
       const input = document.querySelector(selector);
       if (input) {
-        // Clear the value directly
-        input.value = '';
-        // Dispatch an 'input' event to simulate user clearing
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-
-        // Set the new value
+        // Set the new value directly.
         input.value = newValue;
-        // Dispatch an 'input' event to simulate user typing the new value
+        // Dispatch 'input' and 'change' events to ensure any framework listeners are triggered.
         input.dispatchEvent(new Event('input', { bubbles: true }));
-        // Dispatch a 'change' event to ensure all listeners react
         input.dispatchEvent(new Event('change', { bubbles: true }));
+        // Trigger a blur to simulate the user clicking away, which can trigger validation.
+        input.blur();
+      } else {
+        throw new Error(`Input element with selector "${selector}" not found in the DOM for interaction.`);
       }
     }, inputSelector, vcpusToSet.toString());
-    // --- END CRITICAL UPDATE ---
 
-    console.log(`- Cleared and typed new value: ${vcpusToSet}`);
-
-    // Optional: Still a good idea to blur the element if the UI validates on blur.
-    // However, the above events might already trigger validation.
-    await page.evaluate(() => {
-        const activeElement = document.activeElement;
-        if (activeElement && activeElement.tagName === 'INPUT') { // Only blur if it's an input
-            activeElement.blur();
-        }
-    });
+    console.log(`- Set value to "${vcpusToSet}" and dispatched events.`);
 
   } catch (error) {
-    const screenshotName = `error_set_vcpus_${vcpusToSet}_failed.png`; // More specific name
+    const screenshotName = `error_setting_vcpus_${Date.now()}.png`;
     await page.screenshot({ path: screenshotName });
     console.error(`❌ Failed to set "${inputLabelText}" to "${vcpusToSet}". Screenshot saved: ${screenshotName}`);
+    // Re-throw the error to stop the script if this step is critical.
     throw error;
   }
 
@@ -1325,7 +1291,7 @@ async function calculatePricing(sl,row, mode,isFirst, isLast) {
       console.log(`\n🎯 Starting automation for row ${sl}...`);
       
       browser = await puppeteer.launch({
-        headless: false ,
+        headless: true ,
         args: ['--no-sandbox']
       });
       

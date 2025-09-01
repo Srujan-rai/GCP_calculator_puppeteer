@@ -27,7 +27,7 @@ app.post('/compute', async (req, res) => {
   res.json(result);
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🧠 Compute server for ${process.env.MODE} running on port ${PORT}`);
 });
@@ -695,6 +695,8 @@ async function extendmemory_toggle(page) {
   }
 }
 
+// This function is confirmed to work with your provided HTML.
+
 async function setAmountOfMemory(page, memoryToSet) {
   const inputLabelText = 'Amount of memory';
   const targetInputAriaLabelledBy = 'ucc-48'; // Based on your HTML snippet
@@ -803,6 +805,9 @@ async function setAmountOfMemory(page, memoryToSet) {
 
   console.log(`👍 Successfully set "${inputLabelText}" to "${memoryToSet} GiB".`);
 }
+
+
+
 
 async function getAmountOfMemory(page) {
   const inputLabelText = 'Amount of memory';

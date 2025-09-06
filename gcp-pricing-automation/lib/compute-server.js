@@ -695,116 +695,176 @@ async function extendmemory_toggle(page) {
   }
 }
 
-// This function is confirmed to work with your provided HTML.
 
 async function setAmountOfMemory(page, memoryToSet) {
-  const inputLabelText = 'Amount of memory';
-  const targetInputAriaLabelledBy = 'ucc-48'; // Based on your HTML snippet
+  const LABEL_TEXT = 'Amount of memory'; // adjust if your label text differs
+  const MAX_ATTEMPTS = 3;                 // number of clear+type retries if verification fails
+  const BACKSPACES = 10;                 // how many backspaces to send each attempt
+  const BACKSPACE_DELAY_MS = 90;         // delay between backspaces (important)
+  const TYPE_KEY_DELAY_MS = 45;          // typing delay per character
+  const OVERALL_PAUSE_MS = 120;          // short pause after clearing before typing
 
-  console.log(`🧠 Attempting to set "${inputLabelText}" to: ${memoryToSet} GiB`);
+  const delay = ms => new Promise(res => setTimeout(res, ms));
+  console.log(`🧠 Setting "${LABEL_TEXT}" -> ${memoryToSet}`);
 
-  let targetFrame = page; // Assume main page initially
-  let inputHandle = null;
-
+  let targetFrame = page;
   try {
-    // --- STEP 0: Check for iframe (common for Google Cloud Console) ---
-    const iframeSelector = 'iframe[title="Google Cloud Pricing Calculator"]'; // Or a more specific selector if needed
+    // --- iframe detection (Google Cloud calculator common) ---
+    const iframeSelector = 'iframe[title="Google Cloud Pricing Calculator"]';
     const iframeElementHandle = await page.$(iframeSelector);
-
     if (iframeElementHandle) {
-      console.log('✅ Found Google Cloud Pricing Calculator iframe. Switching context...');
       targetFrame = await iframeElementHandle.contentFrame();
-      if (!targetFrame) {
-        throw new Error('Could not get content frame for the pricing calculator iframe.');
-      }
+      if (!targetFrame) throw new Error('Could not get iframe content frame.');
+      console.log('✅ Switched to pricing calculator iframe');
     } else {
-      console.log('ℹ️ No pricing calculator iframe found. Operating on main page.');
+      console.log('ℹ️ No calculator iframe — using main page');
     }
-    // --- END STEP 0 ---
 
-    // Strategy 1: Target the <input type="number"> directly by its aria-labelledby attribute
-    const directInputSelector = `input[type="number"][aria-labelledby="${targetInputAriaLabelledBy}"]`;
-    inputHandle = await targetFrame.$(directInputSelector);
+    // --- Find candidate input index by inspecting aria-labelledby, aria-label, placeholder, container text ---
+    const candidateIndex = await targetFrame.$$eval('input[type="number"]', (els, labelText) => {
+      labelText = labelText.trim().toLowerCase();
+      for (let i = 0; i < els.length; i++) {
+        const el = els[i];
+        // gather possible textual hints for this input
+        const aria = el.getAttribute('aria-labelledby') || '';
+        const ariaIds = aria.trim() ? aria.trim().split(/\s+/) : [];
+        const ariaTexts = ariaIds.map(id => {
+          const n = document.getElementById(id);
+          return n ? (n.innerText || n.textContent || '').trim() : '';
+        });
+        const ariaLabel = el.getAttribute('aria-label') || '';
+        const placeholder = el.getAttribute('placeholder') || '';
+        // try container text (closest meaningful ancestor)
+        const container = el.closest('div') || el.parentElement;
+        const containerText = container ? (container.innerText || container.textContent || '') : '';
 
-    if (inputHandle) {
-      console.log(`- Successfully obtained input element using direct CSS selector for type="number".`);
+        const combined = [...ariaTexts, ariaLabel, placeholder, containerText].join(' ').toLowerCase();
+        if (combined.includes(labelText)) return i;
+      }
+      return -1;
+    }, LABEL_TEXT);
+
+    // If no match by label text, try fallback strategies (first visible number input, best-effort)
+    const inputs = await targetFrame.$$('input[type="number"]');
+    let inputHandle = null;
+    if (candidateIndex >= 0 && inputs[candidateIndex]) {
+      inputHandle = inputs[candidateIndex];
+      console.log(`🔎 Found input by label match (index ${candidateIndex}).`);
     } else {
-      console.warn(`⚠️ Direct CSS selector failed. Falling back to more generic search.`);
-      // Fallback: Generic type="number" with a known class
-      inputHandle = await targetFrame.$(`input.qdOxv-fmcmS-wGMbrd[type="number"]`);
-      if (inputHandle) {
-        console.log(`- Successfully obtained input element using generic class selector.`);
+      // Fallback 1: find first visible input whose container text looks promising
+      for (const iHandle of inputs) {
+        const visible = await iHandle.evaluate(el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+        if (!visible) continue;
+        // quick heuristic: check neighbouring label content
+        const textSnapshot = await targetFrame.evaluate(el => {
+          const aria = el.getAttribute('aria-labelledby') || '';
+          const ids = aria.trim() ? aria.trim().split(/\s+/) : [];
+          const ariaTexts = ids.map(id => { const n = document.getElementById(id); return n ? (n.innerText || n.textContent || '') : ''; });
+          const container = el.closest('div') || el.parentElement;
+          const containerText = container ? (container.innerText || container.textContent || '') : '';
+          return [...ariaTexts, containerText].join(' ').trim();
+        }, iHandle);
+        if (textSnapshot && textSnapshot.toLowerCase().includes(LABEL_TEXT.toLowerCase())) {
+          inputHandle = iHandle;
+          break;
+        }
       }
-    }
-
-    if (!inputHandle) {
-      // Broader fallback: Look for any visible input type="number" related to "Amount of memory"
-      console.warn(`⚠️ All specific selectors failed. Attempting a broader search for the number input.`);
-      const inputs = await targetFrame.$$('input[type="number"]');
-      for (const input of inputs) {
-          const ariaLabelledBy = await input.evaluate(el => el.getAttribute('aria-labelledby'));
-          if (ariaLabelledBy) {
-              try {
-                  const labelText = await targetFrame.$eval(`#${ariaLabelledBy}`, el => el.textContent);
-                  if (labelText.includes(inputLabelText)) {
-                      inputHandle = input;
-                      console.log(`- Successfully obtained input element using broad search with aria-labelledby.`);
-                      break;
-                  }
-              } catch (e) {
-                  // Label element might not be found or readable, ignore this input
-              }
-          }
+      // Fallback 2: pick first visible numeric input (last resort)
+      if (!inputHandle && inputs.length) {
+        for (const h of inputs) {
+          const visible = await h.evaluate(el => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+          if (visible) { inputHandle = h; break; }
+        }
       }
+      if (inputHandle) console.log('⚠️ Used fallback input selection heuristic (no exact label match).');
     }
 
-    if (!inputHandle) {
-      throw new Error(`Could not locate input element for "${inputLabelText}" after all strategies.`);
+    if (!inputHandle) throw new Error('Could not locate the correct numeric input for Amount of memory.');
+
+    // Bring into view, focus and ensure we are targeting right element
+    await inputHandle.evaluate(el => el.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' }));
+    await delay(60);
+
+    async function clearWithPacedBackspaces() {
+      // click to ensure focus and selection
+      try { await inputHandle.click({ clickCount: 3 }); } catch (e) { /* ignore */ }
+      await delay(40);
+      // send paced backspaces so framework reacts to each key
+      for (let i = 0; i < BACKSPACES; i++) {
+        // page.keyboard sends keystrokes to the focused element (works across frames)
+        await page.keyboard.press('Backspace');
+        await delay(BACKSPACE_DELAY_MS);
+      }
+      await delay(OVERALL_PAUSE_MS);
     }
 
-    // --- REVISED INTERACTION STRATEGY FOR NUMBER INPUT ---
-    await inputHandle.focus();
-    console.log(`- Focused input element directly.`);
+    async function setValueAndDispatch(v) {
+      // try typing first (triggers framework handlers)
+      try {
+        await inputHandle.type(String(v), { delay: TYPE_KEY_DELAY_MS });
+      } catch (e) { /* ignore type failures */ }
 
-    await inputHandle.click(); // Click to ensure it's fully active and ready for input
-    console.log(`- Clicked input element directly.`);
+      // ensure final DOM value and fire events for frameworks that rely on programmatic set
+      await targetFrame.evaluate((el, val) => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, val);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, inputHandle, String(v));
 
-    // Option 1 (Preferred for numbers): Clear by setting value to empty string and dispatching events
-    await targetFrame.evaluate((input) => {
-      input.value = '';
-      input.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event for clearing
-      input.dispatchEvent(new Event('change', { bubbles: true })); // Trigger change event
-    }, inputHandle);
-    console.log(`- Attempted to clear value by setting to empty string.`);
+      await delay(60);
+      await inputHandle.evaluate(el => el.blur());
+      await delay(50);
+    }
 
-    // Option 2 (Fallback if Option 1 not enough for UI): Simulate Backspace presses
-    // This is often more reliable for number inputs if direct value setting doesn't trigger UI updates.
-    // However, it requires knowing the max possible digits to clear. A safer way is multiple backspaces.
-    // Or, better, just type over. Puppeteer's `type` method handles existing text well for many cases.
-    // Let's stick with the `evaluate` method first as it's cleaner.
+    // Try clear+type attempts until verification succeeds or attempts exhausted
+    let success = false;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      console.log(`Attempt ${attempt}/${MAX_ATTEMPTS}: clearing input and typing "${memoryToSet}"`);
+      await clearWithPacedBackspaces();
+      await setValueAndDispatch(memoryToSet);
 
-    // Set the new value
-    await targetFrame.evaluate((input, newValue) => {
-      input.value = newValue;
-      input.dispatchEvent(new Event('input', { bubbles: true })); // Trigger input event for new value
-      input.dispatchEvent(new Event('change', { bubbles: true })); // Trigger change event
-    }, inputHandle, memoryToSet.toString());
+      // verify
+      const finalVal = await targetFrame.evaluate(el => el.value, inputHandle);
+      console.log(`Readback after attempt ${attempt}: "${finalVal}"`);
+      // Normalize numeric formatting (some inputs keep trailing zeros or decimals)
+      if (String(finalVal).trim() === String(memoryToSet).trim()) {
+        success = true;
+        break;
+      }
+      // If not matched, do a more aggressive native clear and retry
+      console.warn(`Value mismatch after attempt ${attempt} (got "${finalVal}"). Retrying...`);
+      // aggressive programmatic clear then small wait
+      await targetFrame.evaluate(el => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (setter) setter.call(el, '');
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, inputHandle);
+      await delay(120);
+    }
 
-    console.log(`- Value set to ${memoryToSet}`);
+    if (!success) {
+      const finalVal = await targetFrame.evaluate(el => el.value, inputHandle);
+      throw new Error(`Unable to set value correctly after ${MAX_ATTEMPTS} attempts. Final value: "${finalVal}"`);
+    }
 
-    // Optionally blur to trigger validation
-    await inputHandle.evaluate(input => input.blur());
-
-  } catch (error) {
-    const screenshotName = `error_set_memory_${memoryToSet}_failed.png`;
-    await page.screenshot({ path: screenshotName }); // Use original 'page' for full screenshot
-    console.error(`❌ Failed to set memory. Screenshot saved: ${screenshotName}`);
-    console.error(`Debug manually by inspecting the page at ${page.url()}`);
-    throw error;
+    console.log(`✅ Successfully set "${LABEL_TEXT}" to "${memoryToSet}"`);
+    return;
+  } catch (err) {
+    // screenshot for debugging and rethrow
+    try {
+      const screenshotName = `error_set_memory_${String(memoryToSet).replace(/\s+/g, '_')}_failed.png`;
+      await page.screenshot({ path: screenshotName });
+      console.error(`❌ Screenshot saved: ${screenshotName}`);
+    } catch (e) {
+      // ignore screenshot errors
+    }
+    console.error('Error in setAmountOfMemory:', err);
+    throw err;
   }
-
-  console.log(`👍 Successfully set "${inputLabelText}" to "${memoryToSet} GiB".`);
 }
+
 
 
 
